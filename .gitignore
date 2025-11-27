@@ -21,3 +21,6 @@ tests/
 HALbridge-ChatGPT-to-local-automation/
 agent_memory.sqlit3
 log.txt
+device_commands.json.save
+learned_commands.json
+intent_metrics.json
