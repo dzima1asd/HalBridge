@@ -1,0 +1,77 @@
+{
+  "otw\u00f3rz drug\u0105 sesj\u0119 tmux": {
+    "wykonaj": "tmux new-session -s sesja2"
+  },
+  "znajdz plik matrix.py": {
+    "wykonaj": "find / -name matrix.py 2>/dev/null"
+  },
+  "utw\u00f3rz plik twarz.py": {
+    "wykonaj": "touch twarz.py"
+  },
+  "stw\u00f3rz plik licznik.py": {
+    "wykonaj": "touch licznik.py"
+  },
+  "uruchom licznik.py python3": {
+    "wykonaj": "python3 licznik.py"
+  },
+  "w pliku licznik.py zamie\u0144 10 na 20.": {
+    "wykonaj": "sed -i 's/10/20/g' licznik.py"
+  },
+  "stw\u00f3rz plik marlin.txt": {
+    "wykonaj": "touch marlin.txt"
+  },
+  "wy\u015bwietl pliki": {
+    "wykonaj": "ls"
+  },
+  "w\u0142\u0105cz zielon\u0105 diod\u0119": {
+    "wykonaj": "echo 1 > /sys/class/leds/green/brightness"
+  },
+  "w\u0142\u0105cz czwrwon\u0105 diod\u0119": {
+    "wykonaj": "echo 1 > /sys/class/leds/red/brightness"
+  },
+  "w\u0142\u0105cz \u015bwiat\u0142o numer 1": {
+    "wykonaj": "ssh user@ip_address 'echo 1 > /sys/class/gpio/gpio1/value'"
+  },
+  "ls": {
+    "wykonaj": "ls"
+  },
+  "poka\u017c zawarto\u015b\u0107 folderu home": {
+    "wykonaj": "ls ~/"
+  },
+  "poka\u017c zawarto\u015b\u0107 aktualnego folderu": {
+    "wykonaj": "ls"
+  },
+  "help": {
+    "wykonaj": "help"
+  },
+  "poka\u017c zawarto\u015b\u0107 folderu bie\u017c\u0105cego": {
+    "wykonaj": "ls"
+  },
+  "guruchom w nano program tesr321.py": {
+    "wykonaj": "nano tesr321.py"
+  },
+  "usu\u0144 plik tesr321.py": {
+    "wykonaj": "rm tesr321.py"
+  },
+  "nano test321.py": {
+    "wykonaj": "nano test321.py"
+  },
+  "cat test.py": {
+    "wykonaj": "cat test.py"
+  },
+  "nano test4321.py": {
+    "wykonaj": "nano test4321.py"
+  },
+  "nano wiersz.py": {
+    "wykonaj": "nano wiersz.py"
+  },
+  "cat wiersz.py": {
+    "wykonaj": "cat wiersz.py"
+  },
+  "poka\u017c mi otwarte porty TCP na tym komputerze": {
+    "wykonaj": "netstat -tuln | grep ':.*LISTEN'"
+  },
+  "poka\u017c konfigracj\u0119 firewall": {
+    "wykonaj": "sudo iptables -L -v -n"
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "name": "iot.toggle",
+  "required": ["device"],
+  "optional": ["state"],
+  "slots": {
+    "device": "string",
+    "state": "string"
+  }
+}

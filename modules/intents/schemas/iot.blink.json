@@ -1,0 +1,12 @@
+{
+  "name": "iot.blink",
+  "required": ["device"],
+  "optional": ["on_ms", "off_ms", "duration", "start_time"],
+  "slots": {
+    "device": "string",
+    "on_ms": "integer",
+    "off_ms": "integer",
+    "duration": "integer",
+    "start_time": "string"
+  }
+}

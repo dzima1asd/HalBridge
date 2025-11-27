@@ -1,0 +1,138 @@
+<?xml version="1.0" encoding="iso-8859-2"?>
+<account-history>
+  <search>
+    <account>50102055581111132978900075</account>
+    <date since="2025-07-01" to="2025-07-31"/>
+    <filtering>uznania</filtering>
+  </search>
+  <operations>
+    <operation id="6850">
+      <order-date>2025-07-04</order-date>
+      <exec-date>2025-07-04</exec-date>
+      <class>CREDIT</class>
+      <type>Przelew na rachunek</type>
+      <amount curr="PLN">+696.00</amount>
+      <ending-balance curr="PLN">2154.55</ending-balance>
+      <description>Nr rach. przeciwst.: 26 1010 1704 0060 0222 3000 0000 Dane adr. rach. przeciwst.: 45 Wojskowy Oddział Gospodarczy w Wędrzynie 69-211 Wędrzyn Tytuł: ROT/N22/390M ĆWICZENIA ROTACYJNE/15Lbot/TSW/390m Zlecenie0073144209 Data waluty: 2025-07-04</description>
+      <other-side>
+        <owner>
+          <line>45 Wojskowy Oddział Gospodarczy</line>
+          <line>w Wędrzynie</line>
+          <line>69-211 Wędrzyn</line>
+        </owner>
+        <account>26101017040060022230000000</account>
+      </other-side>
+    </operation>
+    <operation id="6854">
+      <order-date>2025-07-04</order-date>
+      <exec-date>2025-07-04</exec-date>
+      <class>CREDIT</class>
+      <type>Wpłata gotówkowa w kasie</type>
+      <amount curr="PLN">+500.00</amount>
+      <ending-balance curr="PLN">1636.57</ending-balance>
+      <description>Nadawca: ADAM MAZUR WAKACYJNA 30 URLE Tytuł: PRZELEW ŚRODKÓW Wpłata w UP nr:001282250703OLSP0328 Data waluty: 2025-07-04</description>
+      <other-side>
+        <owner>
+          <line>ADAM MAZUR</line>
+          <line>WAKACYJNA 30</line>
+          <line>URLE</line>
+        </owner>
+        <account>59132000190099041520000398</account>
+      </other-side>
+    </operation>
+    <operation id="6858">
+      <order-date>2025-07-07</order-date>
+      <exec-date>2025-07-07</exec-date>
+      <class>CREDIT</class>
+      <type>Przelew na rachunek</type>
+      <amount curr="PLN">+300.00</amount>
+      <ending-balance curr="PLN">1309.29</ending-balance>
+      <description>Nr rach. przeciwst.: 56 1050 1490 1000 0090 7610 7961 Dane adr. rach. przeciwst.: MAJDA SEBASTIAN BODZANÓW 51 48-340 GŁUCHOŁAZY Tytuł: Przelew na telefon Od: 48609326134 Data waluty: 2025-07-07</description>
+      <other-side>
+        <owner>
+          <line>MAJDA SEBASTIAN</line>
+          <line>BODZANÓW 51</line>
+          <line>48-340 GŁUCHOŁAZY</line>
+        </owner>
+        <account>56105014901000009076107961</account>
+      </other-side>
+    </operation>
+    <operation id="6859">
+      <order-date>2025-07-07</order-date>
+      <exec-date>2025-07-07</exec-date>
+      <class>CREDIT</class>
+      <type>Przelew na rachunek</type>
+      <amount curr="PLN">+928.00</amount>
+      <ending-balance curr="PLN">2237.29</ending-balance>
+      <description>Nr rach. przeciwst.: 26 1010 1704 0060 0222 3000 0000 Dane adr. rach. przeciwst.: 45 Wojskowy Oddział Gospodarczy w Wędrzynie 69-211 Wędrzyn Tytuł: ROT/N22/398M ĆWICZENIA ROTACYJNE/15Lbot/TSW/398m Zlecenie0073207779 Data waluty: 2025-07-07</description>
+      <other-side>
+        <owner>
+          <line>45 Wojskowy Oddział Gospodarczy</line>
+          <line>w Wędrzynie</line>
+          <line>69-211 Wędrzyn</line>
+        </owner>
+        <account>26101017040060022230000000</account>
+      </other-side>
+    </operation>
+    <operation id="6860">
+      <order-date>2025-07-07</order-date>
+      <exec-date>2025-07-07</exec-date>
+      <class>CREDIT</class>
+      <type>Przelew na rachunek</type>
+      <amount curr="PLN">+93.93</amount>
+      <ending-balance curr="PLN">2331.22</ending-balance>
+      <description>Nr rach. przeciwst.: 26 1010 1704 0060 0222 3000 0000 Dane adr. rach. przeciwst.: 45 Wojskowy Oddział Gospodarczy w Wędrzynie 69-211 Wędrzyn Tytuł: RŻ/N22/399M Równoważnik Żywnościowy/15Lbot/TSW/ Zlecenie1002404218 Data waluty: 2025-07-07</description>
+      <other-side>
+        <owner>
+          <line>45 Wojskowy Oddział Gospodarczy</line>
+          <line>w Wędrzynie</line>
+          <line>69-211 Wędrzyn</line>
+        </owner>
+        <account>26101017040060022230000000</account>
+      </other-side>
+    </operation>
+    <operation id="6862">
+      <order-date>2025-07-09</order-date>
+      <exec-date>2025-07-09</exec-date>
+      <class>CREDIT</class>
+      <type>Przelew na rachunek</type>
+      <amount curr="PLN">+630.00</amount>
+      <ending-balance curr="PLN">1388.82</ending-balance>
+      <description>Nr rach. przeciwst.: 26 1010 1704 0060 0222 3000 0000 Dane adr. rach. przeciwst.: 45 Wojskowy Oddział Gospodarczy w Wędrzynie 69-211 Wędrzyn Tytuł: GOT/N22/402M Dodatek Gotowość/15LBOT/TSW/402m Zlecenie0073310514 Data waluty: 2025-07-09</description>
+      <other-side>
+        <owner>
+          <line>45 Wojskowy Oddział Gospodarczy</line>
+          <line>w Wędrzynie</line>
+          <line>69-211 Wędrzyn</line>
+        </owner>
+        <account>26101017040060022230000000</account>
+      </other-side>
+    </operation>
+    <operation id="6864">
+      <order-date>2025-07-08</order-date>
+      <exec-date>2025-07-10</exec-date>
+      <class>CREDIT</class>
+      <type>Zwrot płatności kartą</type>
+      <amount curr="PLN">+19.98</amount>
+      <ending-balance curr="PLN">1393.80</ending-balance>
+      <description>Tytuł: 000498707 74987075190030688897348 Lokalizacja: Kraj: POLSKA Miasto: Poznan Adres: Allegro Data wykonania: 2025-07-08 00:00:00 Kwota CashBack: 0.00 PLN Numer referencyjny: 74987075190030688897348 Oryginalna kwota operacji: 19.98 PLN Numer karty: * 1869 Data waluty: 2025-07-08</description>
+    </operation>
+    <operation id="6891">
+      <order-date>2025-07-30</order-date>
+      <exec-date>2025-07-30</exec-date>
+      <class>CREDIT</class>
+      <type>Przelew na rachunek</type>
+      <amount curr="PLN">+4176.00</amount>
+      <ending-balance curr="PLN">4427.47</ending-balance>
+      <description>Nr rach. przeciwst.: 26 1010 1704 0060 0222 3000 0000 Dane adr. rach. przeciwst.: 45 Wojskowy Oddział Gospodarczy w Wędrzynie 69-211 Wędrzyn Tytuł: ROT/N22/001Z ĆWICZENIA ROTACYJNE/15Lbot/TSW/001Z Zlecenie0073730449 Data waluty: 2025-07-30</description>
+      <other-side>
+        <owner>
+          <line>45 Wojskowy Oddział Gospodarczy</line>
+          <line>w Wędrzynie</line>
+          <line>69-211 Wędrzyn</line>
+        </owner>
+        <account>26101017040060022230000000</account>
+      </other-side>
+    </operation>
+  </operations>
+</account-history>

@@ -1,0 +1,48 @@
+{
+  "model": {
+    "expense_terms": [
+      "obciąż",
+      "obciaz",
+      "obciaż",
+      "przelew wych",
+      "przelew wychod",
+      "przelew wykon",
+      "zlecenie przelewu",
+      "wypłata",
+      "wyplata",
+      "płatno",
+      "platno",
+      "transakcj",
+      "operacja kart",
+      "blik",
+      "pos",
+      "zakup",
+      "kod mobilny"
+    ],
+    "income_terms": [
+      "uznanie",
+      "przelew przych",
+      "przychodzący",
+      "przychodzacy",
+      "wpływ",
+      "wplyw",
+      "pos zwrot",
+      "zwrot",
+      "reklamac"
+    ],
+    "balance_words": [
+      "saldo",
+      "dostępne",
+      "dostepne",
+      "stan konta",
+      "dostępnych",
+      "dostepnych"
+    ]
+  },
+  "diagnostics": {
+    "token_counts": [],
+    "subjects": [],
+    "lines_seen": 0
+  },
+  "per_amount_hits": {}
+}
