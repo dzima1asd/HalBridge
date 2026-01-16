@@ -323,6 +323,7 @@ class StreamEngine:
 
     def stop_stream(self) -> bool:
         self.log("stop_stream requested")
+        self.state.set_mode(EngineMode.STOPPING, event="stream_stopping")
         self.cleanup("stream_off", "")
         self.publish_status(force=True)
         self.publish_event("stream_stopped", {})
@@ -331,7 +332,6 @@ class StreamEngine:
     def cleanup(self, reason: str, err: str):
         with self.lock:
             self.set_event(reason, err)
-            self.state.stream = False
             self.state.recording_active = False
             self.state.manual_recording = False
 
@@ -351,6 +351,7 @@ class StreamEngine:
             self.log(f"cleanup: kill_remote_rpicam error: {e}")
 
         self.http.stop()
+        self.state.set_mode(EngineMode.IDLE, event=reason, error=err)
         self.log("cleanup: done")
 
     def shutdown(self, reason="shutdown"):
