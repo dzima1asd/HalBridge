@@ -22,6 +22,7 @@ class ToolRegistry:
 
 registry = ToolRegistry()
 registry.register("web_fetch", "modules.tools.web_fetch")
+registry.register("web_orchestrator", "modules.tools.web_orchestrator")
 registry.register("browser_query", "modules.tools.browser_query")
 registry.register("file_access", "modules.tools.file_access")
 registry.register("dir_list", "modules.tools.dir_list")

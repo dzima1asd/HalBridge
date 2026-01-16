@@ -1,0 +1,765 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+money_menu.py
+Interaktywne menu do przeglądania bazy ~/.local/share/bankdb/bank.db
+Automatyczny ingest transakcji, odporny na token expired.
+"""
+
+import os, sqlite3, datetime, sys, re, subprocess, time, signal
+from typing import List, Tuple
+
+# --------- USTAWIENIA ---------
+DB_PATH = os.path.expanduser("~/.local/share/bankdb/bank.db")
+
+FUEL_VENDORS = [
+    "orlen", "pkn orlen", "shell", "circle k", "bp", "moya", "lotos",
+    "amic", "avia", "total", "statoil", "stacja paliw", "port24",
+]
+PHONE_PHRASES = [
+    "przelew na telefon", "blik na telefon", "blik przelew na telefon", "blik p2p"
+]
+ATM_PHRASES = [
+    "bankomat", "bankomacie", "bankomatu", "bankomatów",
+    "wypłata", "wypłata w bankomacie", "wpłata", "wpłatomat", "atm"
+]
+
+# --------- RICH ---------
+try:
+    from rich.console import Console
+    from rich.table import Table
+    from rich.panel import Panel
+    from rich import box
+    from rich.prompt import Prompt
+except ImportError:
+    print("Brak biblioteki 'rich'. Zainstaluj: pip install --break-system-packages rich")
+    sys.exit(1)
+
+console = Console()
+
+# ===========================================================
+#     AUTOMATYCZNY INGEST Z OCHRONĄ PRZED TOKEN EXPIRED
+# ===========================================================
+
+def ensure_transactions_up_to_date():
+    """
+    Zapewnia, że przed startem money wszystkie transakcje są w bazie.
+    BEZPIECZNA WERSJA z timeout - nie zawiesza się na wygasłym tokenie.
+    """
+    ingest_script = os.path.expanduser("~/HALbridge/modules/bank_etl/gmail_ingest_unified.py")
+    
+    if not os.path.exists(ingest_script):
+        print("[INFO] Skrypt ingest nie istnieje")
+        return
+    
+    max_attempts = 2
+    for attempt in range(max_attempts):
+        try:
+            print(f"[INFO] Próba aktualizacji bazy (próba {attempt+1}/{max_attempts})...")
+            
+            # Użyj Popen z komunikacją w czasie rzeczywistym
+            import subprocess
+            import threading
+            
+            output_lines = []
+            process_done = threading.Event()
+            
+            def read_output(pipe, is_stderr=False):
+                try:
+                    for line in iter(pipe.readline, ''):
+                        if line:
+                            output_lines.append(("STDERR" if is_stderr else "STDOUT", line))
+                            # Wypisz na bieżąco, żeby widzieć postęp
+                            if "@#@" in line or "ERROR" in line.upper() or "token" in line.lower():
+                                print(f"[INGEST] {line.strip()}")
+                except Exception:
+                    pass
+                finally:
+                    if not is_stderr:
+                        process_done.set()
+            
+            # Uruchom proces
+            proc = subprocess.Popen(
+                [sys.executable, ingest_script, "newer_than:120d"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                bufsize=1,
+                universal_newlines=True
+            )
+            
+            # Wątki do czytania outputu
+            stdout_thread = threading.Thread(target=read_output, args=(proc.stdout, False))
+            stderr_thread = threading.Thread(target=read_output, args=(proc.stderr, True))
+            
+            stdout_thread.daemon = True
+            stderr_thread.daemon = True
+            
+            stdout_thread.start()
+            stderr_thread.start()
+            
+            # Czekaj maksymalnie 45 sekund
+            process_done.wait(timeout=45)
+            
+            # Sprawdź czy proces jeszcze żyje
+            if proc.poll() is None:
+                print("[WARNING] Ingest przekroczył timeout (45s) - zabijam proces...")
+                proc.terminate()
+                try:
+                    proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+            
+            # Poczekaj na wątki czytające
+            stdout_thread.join(timeout=2)
+            stderr_thread.join(timeout=2)
+            
+            # Zebrany output
+            full_output = "\n".join([line for _, line in output_lines])
+            
+            # Analiza wyników
+            if "@#@Ingest OK" in full_output:
+                print("[OK] Ingest zakończony pomyślnie")
+                return
+                
+            elif "@#@GMAIL_ERROR:" in full_output:
+                error_part = full_output.split("@#@")[1]
+                error_msg = error_part.replace("GMAIL_ERROR:", "").strip()
+                
+                if any(word in error_msg.lower() for word in ["token", "expired", "invalid_grant", "refresh"]):
+                    print(f"\n[ŻÓŁTA LAMPKA] Token Gmail wygasł: {error_msg}")
+                    
+                    if attempt == 0:  # Tylko pierwsza próba z odświeżeniem
+                        print("Próbuję odświeżyć token automatycznie...")
+                        
+                        # Spróbuj odświeżyć token
+                        refresh_cmd = [sys.executable, 
+                                     os.path.expanduser("~/HALbridge/modules/gmail_bridge/gmail_bridge.py")]
+                        
+                        refresh_proc = subprocess.run(
+                            refresh_cmd,
+                            capture_output=True,
+                            text=True,
+                            timeout=60
+                        )
+                        
+                        if refresh_proc.returncode == 0:
+                            print("[OK] Token odświeżony, próbuję ponownie...")
+                            continue  # Spróbuj ingest jeszcze raz
+                        else:
+                            print("[ERROR] Nie udało się odświeżyć tokenu")
+                            print("Musisz odświeżyć ręcznie w przeglądarce")
+                            print("Kontynuuję z istniejącą bazą...")
+                            return
+                    else:
+                        print("Token nadal nieważny. Kontynuuję z istniejącą bazą...")
+                        return
+                        
+                else:
+                    print(f"[WARNING] Inny błąd Gmail: {error_msg}")
+                    print("Kontynuuję z istniejącą bazą...")
+                    return
+                    
+            else:
+                # Inny błąd lub timeout
+                print("[INFO] Ingest nieudany (timeout lub błąd)")
+                if "partial" in full_output.lower():
+                    print("[INFO] Częściowy sukces - niektóre dane zostały załadowane")
+                return
+                
+        except Exception as e:
+            print(f"[ERROR] Błąd podczas ingestu: {e}")
+            if attempt < max_attempts - 1:
+                print("Ponawiam za 5 sekund...")
+                time.sleep(5)
+            else:
+                print("Przekroczono maksymalną liczbę prób. Kontynuuję z istniejącą bazą...")
+                return
+    
+    print("[INFO] Kontynuuję z istniejącą bazą danych")
+
+# ==========================================================
+#  FUNKCJE SALDA / GMAIL (oryginalne + drobne poprawki)
+# ==========================================================
+
+def try_latest_balance_from_gmail(days: int = 14, _retry: bool = False):
+    """
+    Pobiera saldo z ostatnich maili Inteligo.
+    Obsługa token expired oraz ponawianie ingestu.
+    """
+    import re as _re
+    import datetime as _dt
+
+    INGEST_LOG = os.path.expanduser("~/.local/share/bankdb/ingest_log.txt")
+    LOG_DIR = os.path.dirname(INGEST_LOG)
+    if not os.path.exists(LOG_DIR):
+        os.makedirs(LOG_DIR, exist_ok=True)
+
+    def log_ingest(status: str):
+        with open(INGEST_LOG, "a", encoding="utf-8") as f:
+            ts = _dt.datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+            f.write(f"{ts} {status}\n")
+
+    def get_last_ingest_date():
+        if not os.path.exists(INGEST_LOG):
+            return None
+        with open(INGEST_LOG, "r", encoding="utf-8") as f:
+            lines = [l.strip() for l in f if "ingest OK" in l]
+        if not lines:
+            return None
+        last = lines[-1].split()[0]
+        try:
+            return _dt.datetime.fromisoformat(last)
+        except Exception:
+            return None
+
+    try:
+        sys.path.insert(0, os.path.expanduser('~/HALbridge/modules/gmail_bridge'))
+        import gmail_bridge as gb
+    except Exception:
+        console.print("[red]Błąd: moduł gmail_bridge nie jest dostępny.[/red]")
+        return None
+
+    try:
+        svc = gb.load_service()
+        q = f'from:inteligo@inteligo.pl newer_than:{days}d'
+        ids = gb.gmail_list_all_ids(svc, q, max_per_page=200)
+        if not ids:
+            return None
+
+        best_ts = -1
+        best_val = None
+        BAL_RE = _re.compile(
+            r"Dostępne(?:\s+środki)?\s+([+\-]?\d[\d\s\u00A0]*(?:[.,]\d{2}))\s*(?:PLN|zł)",
+            _re.I,
+        )
+
+        for mid in ids:
+            msg = svc.users().messages().get(
+                userId="me", id=mid, format="full"
+            ).execute()
+            ts = int(msg.get("internalDate", "0"))
+            text = gb._msg_text(msg) or ""
+
+            m = BAL_RE.search(text)
+            if m and ts > best_ts:
+                raw = m.group(1).replace("\xa0", "").replace(" ", "").replace(",", ".")
+                try:
+                    best_val = float(raw)
+                    best_ts = ts
+                except Exception:
+                    pass
+
+        return best_val
+
+    except Exception as e:
+        msg = str(e)
+        if (
+            ("invalid_grant" in msg)
+            or ("expired" in msg.lower())
+            or ("refresh" in msg.lower())
+        ) and not _retry:
+            console.print("[yellow]Token Gmail wygasł — rozpoczynam procedurę odnowienia.[/yellow]")
+
+            # odpal standardowy flow autoryzacji
+            subprocess.run(
+                [
+                    "python3",
+                    os.path.expanduser("~/HALbridge/modules/gmail_bridge/gmail_bridge.py"),
+                ]
+            )
+
+            # policz zakres ingestu w dniach
+            last_ingest = get_last_ingest_date()
+            if last_ingest:
+                diff = (_dt.datetime.now() - last_ingest).days + 2
+                time_arg = f"newer_than:{diff}d"
+            else:
+                time_arg = "newer_than:14d"
+
+            # odśwież bazę po odnowieniu tokenu
+            subprocess.run(
+                [
+                    "python3",
+                    os.path.expanduser("~/HALbridge/modules/bank_etl/gmail_ingest_unified.py"),
+                    time_arg,
+                ]
+            )
+
+            log_ingest("ingest OK (token odnowiony)")
+            return try_latest_balance_from_gmail(days=days, _retry=True)
+
+        console.print(f"[red]Błąd połączenia z Gmail: {e}[/red]")
+        return None
+
+# ==========================================================
+#  DB UTILS
+# ==========================================================
+
+def db() -> sqlite3.Connection:
+    if not os.path.exists(DB_PATH):
+        console.print(f"[red]Nie znaleziono bazy: {DB_PATH}[/red]")
+        sys.exit(1)
+    con = sqlite3.connect(DB_PATH)
+    con.row_factory = sqlite3.Row
+    return con
+
+def q(con: sqlite3.Connection, sql: str, args: Tuple = ()):
+    cur = con.cursor()
+    cur.execute(sql, args)
+    return cur.fetchall()
+
+# ==========================================================
+#  POMOC / NARZĘDZIA
+# ==========================================================
+
+def this_month() -> str:
+    return datetime.datetime.now().strftime("%Y-%m")
+
+def header(title: str) -> None:
+    console.print(
+        Panel.fit(f"[bright_green]{title}[/bright_green]", border_style="bright_green")
+    )
+
+def like_any(field: str, words: List[str]) -> str:
+    return " OR ".join([f"{field} LIKE ?" for _ in words])
+
+def params_any(words: List[str]) -> List[str]:
+    return [f"%{w}%" for w in words]
+
+# ==========================================================
+#   ZAPYTANIA
+# ==========================================================
+
+def monthly_totals(con: sqlite3.Connection, ym: str):
+    income = q(
+        con,
+        "SELECT IFNULL(SUM(amount),0) AS s FROM transactions_final WHERE ym=? AND amount>0",
+        (ym,),
+    )[0]["s"]
+    outgo = q(
+        con,
+        "SELECT IFNULL(SUM(-amount),0) AS s FROM transactions_final WHERE ym=? AND amount<0 AND is_pending=0",
+        (ym,),
+    )[0]["s"]
+    net = float(income) - float(outgo)
+    return float(income), float(outgo), net
+
+def list_incomes(con: sqlite3.Connection, ym: str):
+    return q(
+        con,
+        """
+        SELECT
+            op_date              AS op_date,
+            ROUND(amount,2)      AS amount,
+            counterparty         AS counterparty,
+            COALESCE(title,'')   AS title,
+            source_hint          AS source_hint
+        FROM transactions_final
+        WHERE ym=? AND amount>0
+          AND NOT (category='phone_transfer' OR source_hint='mail:phone')
+        ORDER BY op_date, amount
+        """,
+        (ym,),
+    )
+
+def list_expenses(con: sqlite3.Connection, ym: str):
+    return q(
+        con,
+        """
+        SELECT
+            op_date              AS op_date,
+            ROUND(-amount,2)     AS amount,
+            counterparty         AS counterparty,
+            COALESCE(title,'')   AS title
+        FROM transactions_final
+        WHERE ym=? AND amount<0 AND is_pending=0
+        ORDER BY op_date, amount DESC
+        """,
+        (ym,),
+    )
+
+def list_fuel(con: sqlite3.Connection, ym: str):
+    sql = """
+        SELECT
+            op_date              AS op_date,
+            ROUND(-amount,2)     AS amount,
+            counterparty         AS counterparty,
+            COALESCE(title,'')   AS title
+        FROM transactions_final
+        WHERE ym=? AND amount<0 AND (
+            LOWER(counterparty) LIKE '%orlen%' OR
+            LOWER(counterparty) LIKE '%shell%' OR
+            LOWER(counterparty) LIKE '%circle k%' OR
+            LOWER(counterparty) LIKE '%bp%' OR
+            LOWER(counterparty) LIKE '%moya%' OR
+            LOWER(counterparty) LIKE '%lotos%' OR
+            LOWER(counterparty) LIKE '%amic%' OR
+            LOWER(counterparty) LIKE '%avia%' OR
+            LOWER(counterparty) LIKE '%total%' OR
+            LOWER(counterparty) LIKE '%statoil%' OR
+            LOWER(counterparty) LIKE '%stacja paliw%' OR
+            LOWER(counterparty) LIKE '%port24%'
+        )
+        ORDER BY op_date DESC
+    """
+    return q(con, sql, (ym,))
+
+def list_pending(con: sqlite3.Connection, ym: str):
+    """
+    Pending 2.0 – transakcje z ostatnich 2 dni, które wyglądają na autoryzacje kartowe
+    i nie mają potwierdzenia w tabeli.
+    """
+    sql = """
+        SELECT
+            a.op_date                    AS op_date,
+            ROUND(-a.amount,2)           AS amount,
+            a.counterparty               AS counterparty,
+            COALESCE(a.title,'')         AS title
+        FROM transactions_final a
+        WHERE
+            a.ym = ?
+            AND a.amount < 0
+            AND date(a.op_date) >= date('now','-2 day')
+            AND NOT EXISTS (
+                SELECT 1
+                FROM transactions_final b
+                WHERE
+                    b.amount = a.amount
+                    AND b.counterparty = a.counterparty
+                    AND b.title = a.title
+                    AND date(b.op_date) > date(a.op_date)
+            )
+        ORDER BY a.op_date DESC
+    """
+    return q(con, sql, (ym,))
+
+def list_atm(con: sqlite3.Connection, ym: str):
+    base = "(category='atm')"
+    like_part = like_any("LOWER(counterparty)", ATM_PHRASES) + " OR " + like_any(
+        "LOWER(title)", ATM_PHRASES
+    )
+    sql = f"""
+        SELECT
+            op_date                  AS op_date,
+            ROUND(-amount,2)         AS amount,
+            counterparty             AS counterparty,
+            COALESCE(title,'')       AS title
+        FROM transactions_final
+        WHERE ym=? AND amount<0 AND is_pending=0 AND ({base} OR {like_part})
+        ORDER BY op_date
+    """
+    params = (
+        ym,
+        *params_any([w.lower() for w in ATM_PHRASES]),
+        *params_any([w.lower() for w in ATM_PHRASES]),
+    )
+    return q(con, sql, params)
+
+def list_phone_xfers_out(con: sqlite3.Connection, ym: str):
+    base = "(category='phone_transfer' OR source_hint='mail:phone')"
+    where_like = like_any("LOWER(counterparty)", PHONE_PHRASES) + " OR " + like_any(
+        "LOWER(title)", PHONE_PHRASES
+    )
+    sql = f"""
+        SELECT
+            op_date                  AS op_date,
+            ROUND(-amount,2)         AS amount,
+            counterparty             AS counterparty,
+            COALESCE(title,'')       AS title
+        FROM transactions_final
+        WHERE ym=? AND amount<0 AND is_pending=0 AND ({base} OR {where_like})
+        ORDER BY op_date
+    """
+    params = (
+        ym,
+        *params_any([w.lower() for w in PHONE_PHRASES]),
+        *params_any([w.lower() for w in PHONE_PHRASES]),
+    )
+    return q(con, sql, params)
+
+def list_phone_incoming(con: sqlite3.Connection, ym: str):
+    base = "(category='phone_transfer' OR source_hint='mail:phone')"
+    where_like = like_any("LOWER(counterparty)", PHONE_PHRASES) + " OR " + like_any(
+        "LOWER(title)", PHONE_PHRASES
+    )
+    sql = f"""
+        SELECT
+            op_date                  AS op_date,
+            ROUND(amount,2)          AS amount,
+            counterparty             AS counterparty,
+            COALESCE(title,'')       AS title
+        FROM transactions_final
+        WHERE ym=? AND amount>0 AND ({base} OR {where_like})
+        ORDER BY op_date, amount
+    """
+    params = (
+        ym,
+        *params_any([w.lower() for w in PHONE_PHRASES]),
+        *params_any([w.lower() for w in PHONE_PHRASES]),
+    )
+    return q(con, sql, params)
+
+def list_card_no_fuel(con: sqlite3.Connection, ym: str):
+    fuel_where = like_any("LOWER(counterparty)", FUEL_VENDORS) + " OR " + like_any(
+        "LOWER(title)", FUEL_VENDORS
+    )
+    sql = f"""
+        SELECT
+            op_date                  AS op_date,
+            ROUND(-amount,2)         AS amount,
+            counterparty             AS counterparty,
+            COALESCE(title,'')       AS title
+        FROM transactions_final
+        WHERE
+            ym=?
+            AND amount<0
+            AND NOT ({fuel_where})
+        ORDER BY op_date DESC
+    """
+    params = (
+        ym,
+        *params_any([w.lower() for w in FUEL_VENDORS]),
+        *params_any([w.lower() for w in FUEL_VENDORS]),
+    )
+    return q(con, sql, params)
+
+def list_wojskowe(con: sqlite3.Connection, ym: str):
+    sql = """
+        SELECT
+            op_date                  AS op_date,
+            ROUND(amount, 2)         AS amount,
+            counterparty             AS counterparty,
+            COALESCE(title, '')      AS title
+        FROM transactions_final
+        WHERE
+            ym=?
+            AND amount>0
+            AND (
+                LOWER(counterparty) LIKE '%wojskowy oddział gospodarczy%'
+                OR LOWER(counterparty) LIKE '%wog%'
+            )
+        ORDER BY op_date
+    """
+    return q(con, sql, (ym,))
+
+def annotate_wojskowe(rows):
+    """
+    Oblicza komentarze:
+      • jeśli kwota / 253.38 ≈ liczba całkowita → dni wypłaty
+      • jeśli kwota == 600 → gotowość
+      • jeśli kwota jest wielokrotnością 180 → dodatek granica (i za ile dni)
+      • w innym wypadku → użyj tytułu przelewu
+    """
+    DAILY = 253.38
+    BORDER = 180
+
+    out = []
+    for r in rows:
+        kw = float(r["amount"])
+        cmt = ""
+
+        dni = kw / DAILY
+        if abs(dni - round(dni)) < 0.02:
+            cmt = f"wypłata za {round(dni):.0f} dni"
+        elif abs(kw - 600) < 0.02:
+            cmt = "za gotowość"
+        elif abs((kw / BORDER) - round(kw / BORDER)) < 0.02:
+            d = round(kw / BORDER)
+            cmt = f"dodatek granica za {d} dni"
+        else:
+            t = r["title"] or ""
+            cmt = t.strip() if t else "(brak tytułu)"
+
+        out.append(
+            {
+                "op_date": r["op_date"],
+                "amount": kw,
+                "counterparty": r["counterparty"],
+                "title": r["title"],
+                "comment": cmt,
+            }
+        )
+    return out
+
+# ==========================================================
+#  WIDOKI / EKRANY
+# ==========================================================
+
+def show_summary(con: sqlite3.Connection, ym: str) -> None:
+    saldo = try_latest_balance_from_gmail()
+    saldo_txt = f"{saldo:.2f} zł" if saldo is not None else "brak danych"
+    income, outgo, _net = monthly_totals(con, ym)
+
+    t = Table(box=box.DOUBLE_EDGE, style="green")
+    t.add_column("PKO INTELIGO", style="bright_green")
+    t.add_column("Uznania", style="bright_yellow", justify="right")
+    t.add_column("Wydatki", style="magenta", justify="right")
+    t.add_column("Saldo", style="cyan", justify="right")
+    t.add_row(ym, f"{income:.2f} zł", f"{outgo:.2f} zł", saldo_txt)
+    console.print(Panel(t, border_style="bright_green"))
+
+def show_rows(title: str, rows, is_out: bool = False) -> None:
+    t = Table(
+        title=f"[green]{title}[/green]",
+        box=box.MINIMAL_DOUBLE_HEAD,
+        style="green",
+        expand=True,
+    )
+    t.add_column("Data", style="cyan", width=10, no_wrap=True)
+    t.add_column("Kwota", style="bright_yellow", justify="right", no_wrap=True)
+    t.add_column("Kontrahent", style="green", overflow="fold")
+    t.add_column("Tytuł", style="green", overflow="fold")
+
+    for r in rows:
+        kw = float(r["amount"])
+        if is_out and kw > 0:
+            kw = -kw
+        t.add_row(
+            str(r["op_date"]),
+            f"{kw:.2f} zł",
+            r["counterparty"] or "",
+            r["title"] or "",
+        )
+    console.print(t)
+
+def show_wojskowe(title: str, rows):
+    t = Table(
+        title=f"[green]{title}[/green]",
+        box=box.MINIMAL_DOUBLE_HEAD,
+        style="green",
+        expand=True,
+    )
+    t.add_column("Data", style="cyan", width=10, no_wrap=True)
+    t.add_column("Kwota", style="bright_yellow", justify="right", no_wrap=True)
+    t.add_column("Komentarz", style="green", overflow="fold")
+    t.add_column("Tytuł (surowy)", style="green", overflow="fold")
+
+    for r in rows:
+        t.add_row(
+            str(r["op_date"]),
+            f"{r['amount']:.2f} zł",
+            r["comment"],
+            r["title"],
+        )
+    console.print(t)
+
+# ==========================================================
+#  MENU GŁÓWNE
+# ==========================================================
+
+def menu_screen() -> None:
+    # Najpierw upewniamy się, że baza jest aktualna i token żyje
+    ensure_transactions_up_to_date()
+
+    con = db()
+    ym = this_month()
+    while True:
+        console.clear()
+        header("PKO INTELIGO: podsumowanie miesiąca")
+        show_summary(con, ym)
+
+        m = Table(box=box.SQUARE, style="green", title="[green]Wybierz akcję[/green]")
+        m.add_column("#", style="bright_yellow", justify="right", no_wrap=True)
+        m.add_column("Opis", style="green")
+
+        options = [
+            ("1", "Uznania (szczegóły)"),
+            ("2", "Wydatki (szczegóły)"),
+            ("3", "Wydatki na stacjach paliw"),
+            ("4", "Przelewy na telefon (wychodzące)"),
+            ("5", "Przelewy na telefon (przychodzące)"),
+            ("6", "Wypłaty z bankomatów"),
+            ("7", "Płatności kartą (bez stacji)"),
+            ("8", f"Zmień miesiąc (obecnie: {ym})"),
+            ("9", "Autoryzacje (oczekujące)"),
+            ("0", "Wyjście"),
+            ("W", "Wpływy WOG (analiza dni/gotowość/granica)"),
+        ]
+
+        for k, v in options:
+            m.add_row(k, v)
+        console.print(m)
+        valid = [x[0].upper() for x in options]
+
+        choice = Prompt.ask(
+            "[bright_green]Wybór[/bright_green]",
+            default="0",
+        )
+        choice = (choice or "").strip().upper()
+
+        if choice not in valid:
+            console.print("[red]Nieprawidłowy wybór.[/red]")
+            Prompt.ask("[green]Enter, by spróbować jeszcze raz[/green]")
+            continue
+
+        if choice == "0":
+            console.print("[green]Do zobaczenia.[/green]")
+            break
+        elif choice == "8":
+            new_ym = Prompt.ask(
+                "[bright_green]Podaj miesiąc (YYYY-MM)[/bright_green]", default=ym
+            )
+            if re.fullmatch(r"\d{4}-\d{2}", new_ym):
+                ym = new_ym
+            else:
+                console.print("[red]Zły format miesiąca.[/red]")
+            continue
+        elif choice == "1":
+            rows = list_incomes(con, ym)
+            console.clear()
+            header(f"UZNANIA • {ym}")
+            show_rows("Uznania", rows, is_out=False)
+            Prompt.ask("[green]Enter, by wrócić[/green]")
+        elif choice == "2":
+            rows = list_expenses(con, ym)
+            console.clear()
+            header(f"WYDATKI • {ym}")
+            show_rows("Wydatki", rows, is_out=True)
+            Prompt.ask("[green]Enter, by wrócić[/green]")
+        elif choice == "3":
+            rows = list_fuel(con, ym)
+            console.clear()
+            header(f"PALIWO • {ym}")
+            show_rows("Stacje paliw", rows, is_out=True)
+            Prompt.ask("[green]Enter, by wrócić[/green]")
+        elif choice == "4":
+            rows = list_phone_xfers_out(con, ym)
+            console.clear()
+            header(f"PRZELEWY NA TEL. (WYCHODZĄCE) • {ym}")
+            show_rows("Przelewy na telefon (wychodzące)", rows, is_out=True)
+            Prompt.ask("[green]Enter, by wrócić[/green]")
+        elif choice == "5":
+            rows = list_phone_incoming(con, ym)
+            console.clear()
+            header(f"PRZELEWY NA TEL. (PRZYCHODZĄCE) • {ym}")
+            show_rows("Przelewy na telefon (przychodzące)", rows, is_out=False)
+            Prompt.ask("[green]Enter, by wrócić[/green]")
+        elif choice == "6":
+            rows = list_atm(con, ym)
+            console.clear()
+            header(f"BANKOMATY • {ym}")
+            show_rows("Wypłaty z bankomatów", rows, is_out=True)
+            Prompt.ask("[green]Enter, by wrócić[/green]")
+        elif choice == "7":
+            rows = list_card_no_fuel(con, ym)
+            console.clear()
+            header(f"KARTA (bez stacji) • {ym}")
+            show_rows("Karta bez paliwa", rows, is_out=True)
+            Prompt.ask("[green]Enter, by wrócić[/green]")
+        elif choice == "9":
+            rows = list_pending(con, ym)
+            console.clear()
+            header(f"AUTORYZACJE (OCZEKUJĄCE) • {ym}")
+            show_rows("Autoryzacje (oczekujące)", rows, is_out=True)
+            Prompt.ask("[green]Enter, by wrócić[/green]")
+        elif choice == "W":
+            rows_raw = list_wojskowe(con, ym)
+            annotated = annotate_wojskowe(rows_raw)
+            console.clear()
+            header(f"WOG • {ym}")
+            show_wojskowe("Wpływy z WOG", annotated)
+            Prompt.ask("[green]Enter, by wrócić[/green]")
+
+if __name__ == "__main__":
+    menu_screen()

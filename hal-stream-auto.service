@@ -1,0 +1,15 @@
+[Unit]
+Description=HAL Stream with Auto-Start
+After=network.target
+
+[Service]
+Type=simple
+User=hal
+Group=hal
+WorkingDirectory=/home/hal/HALbridge
+ExecStart=/usr/bin/python3 /home/hal/HALbridge/hal_stream_final.py --auto-start
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

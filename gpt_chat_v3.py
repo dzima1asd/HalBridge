@@ -7,6 +7,7 @@ import time
 import json
 import sqlite3
 import subprocess
+import urllib.parse
 from dataclasses import dataclass, field
 from datetime import datetime, timezone as tz
 from pathlib import Path
@@ -35,6 +36,22 @@ from modules.metrics import stat_intent_ok, stat_intent_fail, stat_slot_fill, st
 from modules.dialog.manager_v2 import ask_for_missing_slots
 from modules.tools.registry import registry
 from modules.tools.web_fetch import resolve_natural_query
+from modules.intents.engine_v2 import IntentEngineV2
+
+def parse_time_to_seconds(value: str) -> int:
+    """
+    Zamienia zapis czasu na sekundy.
+    Obsługuje:
+    - "60"    → 60
+    - "3:30"  → 210
+    """
+    value = value.strip()
+
+    if ":" in value:
+        minutes, seconds = value.split(":", 1)
+        return int(minutes) * 60 + int(seconds)
+
+    return int(value)
 
 # --- Instancje globalne ---
 bridge = HardwareBridge()
@@ -1430,115 +1447,174 @@ class GPTChatAPI:
         self.logger.log("agent.start", model=cfg.OPENAI_MODEL, usd_to_pln=cfg.USD_TO_PLN)
         self.modules = ModuleRunner(cfg, self.logger)
 
+    def ai_intent(self, user_query: str) -> dict:
+        """
+        Określa, czy pytanie wymaga internetu — wersja C (pełna klasyfikacja semantyczna).
+        Brak tokenów. Zero LLM. Twarde reguły.
+        """
+
+        q = user_query.strip().lower()
+
+        # --- 1) Słowa kluczowe news / zdarzenia / geopolityka ---
+        NEWS_KEYWORDS = [
+            "co się wydarzyło", "co sie wydarzylo", "co nowego",
+            "najnowsze", "wiadomości", "newsy", "informacje",
+            "sytuacja w", "breaking", "aktualne", "co obecnie",
+            "co teraz", "co dzisiaj", "co w polsce", "co w usa",
+            "raport", "zdarzenia", "wydarzenia", "sytuacja polityczna",
+            "inflacja", "gospodarka dziś", "ekonomia dziś",
+        ]
+
+        if any(k in q for k in NEWS_KEYWORDS):
+            return {"need_web": True, "queries": [user_query]}
+
+        # --- 2) Jeśli pojawia się KONKRETNA data → internet ---
+        import re
+        DATE_PATTERNS = [
+            r"\d{1,2}\s+\w+",          # "4 grudnia"
+            r"\d{1,2}\.\d{1,2}\.\d{4}", # 04.12.2024
+            r"\d{1,2}/\d{1,2}/\d{4}",   # 4/12/2024
+            r"\d{4}",                  # rok 2024
+        ]
+        if any(re.search(p, q) for p in DATE_PATTERNS):
+            return {"need_web": True, "queries": [user_query]}
+
+        # --- 3) Technika, mechanika, nauka, definicje → LOCAL ---
+        LOCAL_KEYWORDS = [
+            "jak działa", "z czego zbudowany", "z jakich części",
+            "co to jest", "wyjaśnij", "definicja",
+            "ile to jest", "oblicz", "matematyka", "fizyka",
+            "chemia", "mechanizm", "działanie", "opis konstrukcji",
+            "karabin", "silnik", "komputer", "algorytm",
+            "python", "linux", "bash",
+        ]
+
+        if any(k in q for k in LOCAL_KEYWORDS):
+            return {"need_web": False, "queries": [user_query]}
+
+        # --- 4) Pytania o historię / kulturę → LOCAL ---
+        HISTORY_KEYWORDS = [
+            "historia", "kim był", "kiedy żył", "starożytność",
+            "średniowiecze", "bitwa", "cesarz", "król",
+            "dlaczego doszło", "tło historyczne",
+        ]
+        if any(k in q for k in HISTORY_KEYWORDS):
+            return {"need_web": False, "queries": [user_query]}
+
+        # --- 5) Pytania o firmy, produkty, ceny, aktualne dane → WEB ---
+        BUSINESS_KEYWORDS = [
+            "cena", "kosztuje", "kurs", "notowania",
+            "ile kosztuje", "prognoza", "firma", "spółka",
+            "rynek", "amazon", "tesla", "allegro",
+        ]
+        if any(k in q for k in BUSINESS_KEYWORDS):
+            return {"need_web": True, "queries": [user_query]}
+
+        # --- 6) Pytania ogólne, ale nie-newsowe → LOCAL ---
+        return {"need_web": False, "queries": [user_query]}
+
+    def safe_json(self, raw, default=None):
+        import json
+
+        if raw is None:
+            return default or {}
+
+        if isinstance(raw, dict):
+            return raw
+
+        try:
+            return json.loads(str(raw))
+        except Exception:
+            return default or {}
+
     # --------- Prompt budowany z pamięci i streszczeń ---------
     def _system_prompt(self) -> str:
         rules = [
-            "Jesteś asystentem terminalowym i helperem do generowania kodu.",
-            "Zasady:",
-            "- Na pytania ogólne odpowiadaj tekstem.",
-            "- Przy generowaniu kodu używaj WYŁĄCZNIE standardowej biblioteki Pythona.",
-            "- Nie używaj pip/requests/keyboard/termcolor.",
-            "- W kodzie nie zwracaj poleceń do shella ani komentarzy – tylko czysty blok ```python```.",
+            # ================================================
+            #  ROLA I ŚRODOWISKO
+            # ================================================
+            "Jesteś asystentem terminalowym działającym wewnątrz środowiska Linux/Ubuntu użytkownika 'hal'.",
+            "Pracujesz na tym samym systemie, z którego przychodzi polecenie.",
+            "Masz dostęp do narzędzi (function calling) oraz możesz generować bloki ```bash```.",
 
-            # --- BLOK INTERNETOWY ---
-            "Masz dostęp do narzędzi web_fetch oraz browser_query.",
-            "Jeśli pytanie wymaga aktualnych danych (pogoda, kursy walut, notowania, newsy, fakty bieżące, dane o firmach, produktach, usługach, osobach, wydarzeniach) – użyj web_fetch.",
-            "Jeśli użytkownik nie podał konkretnego URL, rozpocznij od wyszukiwarki Bing w formie: https://www.bing.com/search?q=<zapytanie>.",
-            "Jeśli pytanie dotyczy pogody – użyj https://wttr.in/<miasto>?format=3.",
-            "Jeśli pytanie dotyczy kursu USD/EUR – użyj API NBP, np. https://api.nbp.pl/api/exchangerates/rates/A/USD/?format=json.",
-            "Po pobraniu danych użyj browser_query do analizy HTML (tytuł, linki, streszczenie).",
-            "Odpowiedź pisz zwięźle, w języku naturalnym, na podstawie realnych danych z internetu.",
-            "Nie pokazuj użytkownikowi tool-callów ani JSON – to działa tylko wewnętrznie.",
+            # ================================================
+            #  ZASADA ZERO ZGADYWANIA – LOKALNY SYSTEM
+            # ================================================
+            "Jeśli pytanie DOTYCZY LOKALNEGO SYSTEMU (np. w tym Ubuntu), w szczególności:",
+            "- rozmiaru pliku (kilobajty, bajty, MB, itp.),",
+            "- liczby linii w pliku, istnienia pliku, jego ścieżki, daty modyfikacji, uprawnień, właściciela,",
+            "- zawartości katalogu, listy plików, drzew katalogów,",
+            "- procesów, PID-ów, zużycia CPU/RAM, wersji pakietów,",
+            "- jakichkolwiek danych, które mogą być sprawdzone komendą systemową w Ubuntu:",
+            "",
+            "  → NIE MASZ PRAWA zgadywać ani wymyślać odpowiedzi.",
+            "  → NIE WOLNO Ci podawać liczby, rozmiaru, opisu ani podsumowania BEZ wcześniejszego wywołania komendy.",
+            "",
+            "W takiej sytuacji TWOJA PIERWSZA ODPOWIEDŹ MUSI wyglądać w JEDEN z dwóch sposobów:",
+            "",
+            "  1) Jako wywołanie narzędzia `shell_execute` (function calling) z poprawną komendą bash,",
+            "     np. {\"tool\": \"shell_execute\", \"cmd\": \"stat -c '%s' gpt_chat_v3.py\"},",
+            "",
+            "  ALBO",
+            "",
+            "  2) Jako blok:",
+            "     ```bash",
+            "     <konkretna_komenda>",
+            "     ```",
+            "",
+            "Nie wolno Ci w takiej sytuacji zwracać samej liczby (np. \"104\"), tekstu typu \"ma 100 KB\"",
+            "ani żadnego innego opisu bez komendy. Każda taka odpowiedź jest BŁĘDNA względem tych zasad.",
+            "Jeśli nie jesteś pewien, czy pytanie dotyczy lokalnego systemu, PRZYJMUJ, ŻE DOTYCZY i zachowuj się jak wyżej.",
 
-            # --- AUTOKOREKTA ZAPYTAŃ ---
-            "Jeśli pytanie użytkownika zawiera literówki, błędy ortograficzne lub oczywiste pomyłki (imiona, nazwy firm, miast, produktów), popraw zapytanie w sposób dyskretny i użyj poprawionej wersji do wyszukiwania.",
-            "Jeśli istnieje kilka możliwych poprawek, wybierz tę najbardziej prawdopodobną na podstawie kontekstu pytania.",
+            # ================================================
+            #  BASH / BLOKI KONSOLI
+            # ================================================
+            "Blok ```bash``` generujesz wszędzie tam, gdzie naturalnym narzędziem jest polecenie terminalowe.",
+            "W bloku ```bash``` nie umieszczasz komentarzy ani objaśnień – tylko czyste polecenia.",
+            "Po wykonaniu komendy agent zwróci wynik, który możesz później interpretować w kolejnych turach.",
 
-            # --- PRIORYTET RZETELNYCH ŹRÓDEŁ NEWSOWYCH ---
-            "Podczas wyszukiwania aktualnych informacji i newsów, najpierw próbuj znaleźć dane w najbardziej zaufanych źródłach globalnych:",
-            "1. Reuters (https://www.reuters.com)",
-            "2. AP News (https://apnews.com)",
-            "3. BBC News (https://www.bbc.com/news)",
-            "Jeśli wyniki z tych źródeł są dostępne w wyszukiwaniu – traktuj je jako priorytetowe.",
-            "Jeśli nie znajdziesz danych w tych źródeł, wtedy przechodź do wyników ogólnych wyszukiwarki.",
+            # ================================================
+            #  NARZĘDZIA (FUNCTION CALLING)
+            # ================================================
+            "Masz do dyspozycji narzędzia: shell_execute, file_access, file_chunk, file_write, dir_list, file_search, web_fetch, browser_query.",
+            "Narzędzi używaj, gdy trzeba realnie odczytać pliki, katalogi, dane z sieci lub wykonać komendę.",
+            "Narzędzia wywołujesz TYLKO w ramach function calling, nie w zwykłym tekście odpowiedzi.",
 
-            # --- ANALIZA PLIKÓW I FOLDERÓW ---
-            "Jeśli użytkownik prosi o analizę folderu:",
-            "- najpierw użyj dir_list aby poznać zawartość.",
-            "- wybierz tylko istotne pliki (.py, .json, .txt).",
-            "- dla każdego użyj file_access lub file_chunk jeśli plik jest duży.",
-            "- analizuj strukturę projektu na podstawie realnych plików.",
-            "Jeśli użytkownik chce znaleźć miejsce w kodzie, użyj file_search.",
-            "Jeśli użytkownik chce modyfikacji kodu, użyj file_write.",
-            "Nigdy nie zgaduj treści plików — zawsze pobieraj je narzędziami.",
+            # ================================================
+            #  KOD PYTHON
+            # ================================================
+            "Jeśli użytkownik prosi o kod w Pythonie:",
+            "- korzystaj wyłącznie ze standardowej biblioteki Pythona,",
+            "- NIE używaj pip, requests, keyboard, termcolor ani zewnętrznych pakietów,",
+            "- zwracaj kod w czystym bloku ```python``` bez poleceń do shella.",
+
+            # ================================================
+            #  INTERNET
+            # ================================================
+            "Do pobierania aktualnych danych z internetu używaj narzędzia web_fetch.",
+            "Jeśli użytkownik nie podał adresu URL, możesz użyć Binga: https://www.bing.com/search?q=<zapytanie>.",
+            "Do analizy HTML (tytuły, linki, streszczenie) używaj browser_query na treści pobranej przez web_fetch.",
+            "Nie pokazuj użytkownikowi surowych tool-calli ani JSON – opisuj wynik po ludzku.",
+
+            # ================================================
+            #  AUTOKOREKTA I NEWSY
+            # ================================================
+            "Jeśli pytanie zawiera oczywiste literówki lub błędy w nazwach, popraw je w myślach i użyj poprawionej wersji.",
+            "Dla newsów i ważnych informacji najpierw próbuj znaleźć dane w zaufanych źródłach (np. Reuters, AP News, BBC),",
+            "a dopiero potem w innych wynikach wyszukiwarki.",
+
+            # ================================================
+            #  SYSTEM PLIKÓW
+            # ================================================
+            "Treści plików nigdy nie zgaduj – zawsze używaj file_access lub file_chunk.",
+            "Zawartości katalogów nigdy nie zgaduj – zawsze używaj dir_list.",
         ]
-
-        # --- Stałe, użytkownikowe reguły z pliku ---
-        extra_rules = load_persistent_prompt_rules()
-        if extra_rules:
-            rules.append("\nDodatkowe stałe reguły zachowania (z pliku):")
-            for r in extra_rules:
-                rules.append(r)
-
-        pinned = self.memory.pinned_memories(self.session_id)
-        if pinned:
-            rules.append("\nStałe fakty (pinned), traktuj jak kontekst użytkownika:")
-            for p in pinned:
-                rules.append(f"- {p}")
-        _, summary = self.memory.last_summary(self.session_id)
-        if summary:
-            rules.append("\nStreszczenie dotychczasowej rozmowy:")
-            rules.append(summary[: self.cfg.SUMMARY_MAX_CHARS])
-        return "\n".join(rules)
-
-    # --------- Autostreszczenia po N wiadomościach ---------
-    def _maybe_autosummarize(self):
-        if not self.client:
-            return
-        cnt = self.memory.count_since_summary(self.session_id)
-        if cnt < self.cfg.SUMMARY_MSG_THRESHOLD:
-            return
-        last_id, _ = self.memory.last_summary(self.session_id)
-        msgs = self.memory.get_messages_since(self.session_id, last_id, limit=self.cfg.SUMMARY_WINDOW)
-        if not msgs:
-            return
-        convo = []
-        for m in msgs:
-            convo.append(f"{m['role'].upper()}: {m['content']}")
-        convo_text = "\n".join(convo)[-4000:]
-        prompt = (
-            "Stwórz zwięzłe streszczenie poniższej rozmowy, w 5-10 punktach, "
-            "tylko najważniejsze fakty i decyzje użytkownika. Unikaj wodolejstwa.\n\n"
-            + convo_text
-        )
-        try:
-            resp = self.client.chat.completions.create(
-                model=self.cfg.OPENAI_MODEL,
-                temperature=0.2,
-                max_tokens=400,
-                messages=[
-                    {"role": "system", "content": "Jesteś skrupulatnym narzędziem do streszczania."},
-                    {"role": "user", "content": prompt},
-                ],
-            )
-            summary = resp.choices[0].message.content.strip()
-            upto = self.memory.last_message_id(self.session_id)
-            self.memory.add_summary(self.session_id, upto, summary)
-            self.logger.log("memory.summary.added", upto=upto, chars=len(summary))
-            try:
-                u = resp.usage
-                self.meter.add_usage(
-                    model=self.cfg.OPENAI_MODEL,
-                    prompt_tokens=int(getattr(u, "prompt_tokens", 0)),
-                    completion_tokens=int(getattr(u, "completion_tokens", 0)),
-                    note="autosummary",
-                )
-            except Exception:
-                pass
-        except Exception as e:
-            self.logger.log("memory.summary.error", error=str(e))
+        return "\n".join(rules) + "\n"
 
 # --------- Deklaracja narzędzi (tools) dla GPT API ---------
+    def urlencode(self, txt: str) -> str:
+        return urllib.parse.quote_plus(txt)
+
     def _tools_schema(self):
         return [
             {
@@ -1655,20 +1731,60 @@ class GPTChatAPI:
             "required": ["path", "content"]
         }
     }
+},
+{
+    "type": "function",
+    "function": {
+        "name": "shell_execute",
+        "description": "Wykonuje komendę systemową w powłoce bash i zwraca stdout/stderr.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "cmd": {"type": "string"}
+            },
+            "required": ["cmd"]
+        }
+    }
 }
         ]
+
+# ------ NIE PRZEKRACZANIE KONTEKSTU
+    @staticmethod
+    def _maybe_autosummarize(text: str) -> str:
+        """
+        Lekki mechanizm zabezpieczający przed przekroczeniem kontekstu.
+        Jeśli odpowiedź modelu jest absurdalnie długa (np. >15k znaków),
+        skracamy ją, aby nie zatkać pamięci sesji.
+
+        Jest statyczna, bo bywa wywoływana jako GPTChatAPI._maybe_autosummarize(answer).
+        """
+        if not text:
+            return text
+
+        # jeśli tekst jest krótki → zwracamy bez zmian
+        if len(text) < 15000:
+            return text
+
+        # skrót dla ekstremalnych odpowiedzi
+        return text[:12000] + "\n\n[... skrócono autosummarize ...]\n"
+
+        # jeśli tekst jest krótki → zwracamy bez zmian
+        if len(text) < 15000:
+            return text
+
+        # skrót dla ekstremalnych odpowiedzi
+        return text[:12000] + "\n\n[... skrócono autosummarize ...]\n"
 
 # --------- LLM interakcje ---------
     def ask_ai(self, prompt: str, *, execute: bool = True, note: str = "") -> str:
         if not self.client:
             return f"🔌 [Offline] Brak OPENAI_API_KEY. Prompt: {prompt}"
 
-        # --- Budowa wiadomości ---
-        msgs = [{"role": "system", "content": self._system_prompt()}]
-        msgs += self.memory.get_recent_messages(self.session_id, limit=10)
-        msgs.append({"role": "user", "content": prompt})
+        # --- Budowa kontekstu ---
+        messages = [{"role": "system", "content": self._system_prompt()}]
+        messages += self.memory.get_recent_messages(self.session_id, limit=10)
+        messages.append({"role": "user", "content": prompt})
 
-        # --- Log: request ---
         self.logger.log(
             "llm.request",
             model=self.cfg.OPENAI_MODEL,
@@ -1676,25 +1792,70 @@ class GPTChatAPI:
             prompt_len=len(prompt)
         )
 
-        # --- Call LLM z narzędziami ---
-        resp = self.client.chat.completions.create(
-            model=self.cfg.OPENAI_MODEL,
-            temperature=self.cfg.OPENAI_TEMPERATURE,
-            max_tokens=self.cfg.OPENAI_MAX_TOKENS,
-            messages=msgs,
-            tools=self._tools_schema(),
-            tool_choice="auto",
-        )
+        # --- PĘTLA MULTI-TURN ---
+        while True:
+            resp = self.client.chat.completions.create(
+                model=self.cfg.OPENAI_MODEL,
+                temperature=self.cfg.OPENAI_TEMPERATURE,
+                max_tokens=self.cfg.OPENAI_MAX_TOKENS,
+                messages=messages,
+                tools=self._tools_schema(),
+                tool_choice="auto",
+            )
 
-        # Odpowiedź może być None
-        answer = resp.choices[0].message.content
-        answer = answer.strip() if answer else ""
+            msg = resp.choices[0].message
+            answer = (msg.content or "").strip()
+            tool_calls = getattr(msg, "tool_calls", None)
 
-        # --- Obsługa tool-calls ---
-        tool_calls = getattr(resp.choices[0].message, "tool_calls", None)
-        if tool_calls:
+            # --- Jeśli nie ma tool-call → kończymy rozmowę ---
+            if not tool_calls:
+                # log tokenów
+                try:
+                    u = resp.usage
+                    self.meter.add_usage(
+                        model=self.cfg.OPENAI_MODEL,
+                        prompt_tokens=int(getattr(u, "prompt_tokens", 0)),
+                        completion_tokens=int(getattr(u, "completion_tokens", 0)),
+                        note=note or ("execute" if execute else "noexec"),
+                    )
+                except Exception:
+                    pass
 
-            assistant_msg = {
+                # historia
+                self.memory.add_message(self.session_id, "user", prompt)
+                self.memory.add_message(self.session_id, "assistant", answer)
+                self._maybe_autosummarize(answer)
+
+                # auto-wykonanie bash
+                if execute:
+                    low = answer.lower()
+
+                    if low.startswith("wykonaj:"):
+                        cmd = answer.split(":", 1)[1].strip()
+                        ok, warn = self.validator.validate(cmd)
+                        if not ok:
+                            return warn or "❌ Komenda zablokowana."
+                        _, out = self.exec.run(cmd)
+                        return out
+
+                    m = re.search(
+                        r"```(?:bash|sh)?\s*([\s\S]*?)```",
+                        answer,
+                        re.IGNORECASE
+                    )
+                    if m:
+                        cmd = m.group(1).strip()
+                        ok, warn = self.validator.validate(cmd)
+                        if not ok:
+                            return warn or "❌ Komenda zablokowana."
+                        _, out = self.exec.run(cmd)
+                        return out
+
+                return answer
+
+            # --- Jeśli są tool-calle → wykonujemy je i kontynuujemy pętlę ---
+            # 1. Zapisujemy wiadomość asystenta zawierającą deklarację tool-call
+            messages.append({
                 "role": "assistant",
                 "content": answer,
                 "tool_calls": [
@@ -1708,147 +1869,42 @@ class GPTChatAPI:
                     }
                     for call in tool_calls
                 ],
-            }
+            })
 
-            final_messages = [
-                {"role": "system", "content": self._system_prompt()},
-            ]
-
-            final_messages += self.memory.get_recent_messages(self.session_id, limit=10)
-            final_messages.append({"role": "user", "content": prompt})
-            final_messages.append(assistant_msg)
-
-            # wykonanie narzędzi
+            # 2. Wykonujemy każde narzędzie
             for call in tool_calls:
                 name = call.function.name
                 args = json.loads(call.function.arguments)
 
-                # WEB FETCH
-                if name == "web_fetch":
-                    try:
-                        out = registry.invoke("web_fetch", args)
-                    except Exception as e:
-                        out = {"error": str(e)}
+                try:
+                    if name == "shell_execute":
+                        import subprocess
+                        r = subprocess.run(
+                            args["cmd"],
+                            shell=True,
+                            capture_output=True,
+                            text=True
+                        )
+                        out = {
+                            "ok": True,
+                            "cmd": args["cmd"],
+                            "stdout": r.stdout,
+                            "stderr": r.stderr,
+                            "returncode": r.returncode,
+                        }
 
-                # BROWSER QUERY
-                elif name == "browser_query":
-                    try:
-                        out = perform_browser_query(args["url"], args["html"])
-                    except Exception as e:
-                        out = {"error": str(e)}
+                    else:
+                        out = self.registry.invoke(name, args)
 
-                # FILE ACCESS (czytanie plików)
-                elif name == "file_access":
-                    try:
-                        out = registry.invoke("file_access", args)
-                    except Exception as e:
-                        out = {"error": str(e)}
+                except Exception as e:
+                    out = {"error": str(e)}
 
-                # LISTOWANIE FOLDERU
-                elif name == "dir_list":
-                    try:
-                        out = registry.invoke("dir_list", args)
-                    except Exception as e:
-                        out = {"error": str(e)}
-
-                # PRZESZUKIWANIE PLIKÓW
-                elif name == "file_search":
-                    try:
-                        out = registry.invoke("file_search", args)
-                    except Exception as e:
-                        out = {"error": str(e)}
-
-                # CZYTANIE FRAGMENTÓW PLIKÓW
-                elif name == "file_chunk":
-                    try:
-                        out = registry.invoke("file_chunk", args)
-                    except Exception as e:
-                        out = {"error": str(e)}
-
-                # ZAPIS DO PLIKU
-                elif name == "file_write":
-                    try:
-                        out = registry.invoke("file_write", args)
-                    except Exception as e:
-                        out = {"error": str(e)}
-
-                # nieznane narzędzie
-                else:
-                    out = {"error": f"Unknown tool {name}"}
-
-                # wymuszenie tekstu
-                if isinstance(out, (dict, list)):
-                    out_str = json.dumps(out, ensure_ascii=False)
-                else:
-                    out_str = str(out)
-
-                final_messages.append({
+                # 3. Zwracamy wynik narzędzia do modelu
+                messages.append({
                     "role": "tool",
                     "tool_call_id": call.id,
-                    "content": out_str,
+                    "content": json.dumps(out, ensure_ascii=False),
                 })
-
-            resp2 = self.client.chat.completions.create(
-                model=self.cfg.OPENAI_MODEL,
-                temperature=self.cfg.OPENAI_TEMPERATURE,
-                max_tokens=self.cfg.OPENAI_MAX_TOKENS,
-                messages=final_messages,
-            )
-
-            return resp2.choices[0].message.content.strip()
-
-        # --- Log: odpowiedź ---
-        self.logger.log(
-            "llm.response",
-            model=self.cfg.OPENAI_MODEL,
-            answer_len=len(answer)
-        )
-
-        # --- Tokeny ---
-        try:
-            u = resp.usage
-            self.meter.add_usage(
-                model=self.cfg.OPENAI_MODEL,
-                prompt_tokens=int(getattr(u, "prompt_tokens", 0)),
-                completion_tokens=int(getattr(u, "completion_tokens", 0)),
-                note=note or ("execute" if execute else "noexec"),
-            )
-        except Exception:
-            pass
-
-        # --- Historia ---
-        self.memory.add_message(self.session_id, "user", prompt)
-        self.memory.add_message(self.session_id, "assistant", answer)
-        self._maybe_autosummarize()
-
-        # --- AUTO-WYKONANIE ---
-        if execute:
-            low = answer.lower()
-
-            # Format 1: "wykonaj: <cmd>"
-            if low.startswith("wykonaj:"):
-                cmd = answer.split(":", 1)[1].strip()
-                ok, warn = self.validator.validate(cmd)
-                if not ok:
-                    return warn or "❌ Komenda zablokowana."
-                _, out = self.exec.run(cmd)
-                return out
-
-            # Format 2: ```bash ...```
-            m = re.search(
-                r"```(?:bash|sh)?\s*([\s\S]*?)```",
-                answer,
-                re.IGNORECASE
-            )
-            if m:
-                cmd = m.group(1).strip()
-                ok, warn = self.validator.validate(cmd)
-                if not ok:
-                    return warn or "❌ Komenda zablokowana."
-                _, out = self.exec.run(cmd)
-                return out
-
-        return answer
 
     def device_command(self, text: str) -> str | None:
         """
@@ -1991,6 +2047,85 @@ class GPTChatAPI:
                 return out2
         return out
 
+# ================== uniwersalny „orchestrator” webowy
+def run_web_research(api, registry, intent: dict, prompt: str) -> str:
+    """
+    Uniwersalne wyszukiwanie:
+    - używa intent["queries"] albo samego promptu,
+    - robi Bing search,
+    - z tekstu wyników LLM wybiera linki,
+    - pobiera kilka stron web_fetchem,
+    - LLM odpowiada na podstawie realnych danych.
+    """
+    queries = intent.get("queries") or [prompt]
+    all_links = []
+
+    # 1. Wyszukiwanie w Bing + ekstrakcja linków przez LLM
+    for q in queries[:3]:
+        search_url = f"https://www.bing.com/search?q={api.urlencode(q)}"
+        search_res = registry.invoke("web_fetch", {"url": search_url})
+        if not search_res.get("ok"):
+            continue
+        search_text = (search_res.get("text") or "").strip()
+        if not search_text:
+            continue
+
+        link_prompt = (
+            "Dostałeś tekst strony z wynikami wyszukiwania (bez HTML).\n"
+            "Wyodrębnij z niego do 5 najbardziej obiecujących linków prowadzących "
+            "do źródeł, które mogą pomóc odpowiedzieć na pytanie użytkownika.\n"
+            "Zwróć TYLKO JSON w formacie:\n"
+            "{ \"links\": [ {\"url\": \"https://...\", \"title\": \"...\"}, ... ] }\n\n"
+            "Tekst wyników wyszukiwania:\n"
+            + search_text[:10000]
+        )
+
+        raw_links = api.ask_ai(link_prompt, execute=False, note="web_links")
+        parsed = api.safe_json(raw_links, default={"links": []})
+        for link in parsed.get("links", []):
+            url = (link or {}).get("url") or ""
+            title = (link or {}).get("title") or ""
+            if not url.startswith("http"):
+                continue
+            if url not in [l["url"] for l in all_links]:
+                all_links.append({"url": url, "title": title})
+
+    # 2. Pobranie kilku stron z tych linków
+    pages = []
+    for link in all_links[:3]:
+        res = registry.invoke("web_fetch", {"url": link["url"]})
+        if not res.get("ok"):
+            continue
+        text = (res.get("text") or "").strip()
+        if not text:
+            continue
+        pages.append((link["url"], text[:40000]))
+
+    # Jeśli nic się nie udało pobrać – fallback
+    if not pages:
+        return (
+            "Próbowałem znaleźć informacje w internecie, ale nie udało się "
+            "uzyskać wiarygodnych danych z wyników wyszukiwania. "
+            "Nie będę zgadywać ani wymyślać odpowiedzi."
+        )
+
+    # 3. Zlepienie kontekstu i końcowa odpowiedź LLM
+    context_parts = []
+    for i, (url, text) in enumerate(pages, 1):
+        context_parts.append(f"ŹRÓDŁO {i}: {url}\n{text}")
+
+    big_context = "\n\n---\n\n".join(context_parts)
+
+    answer_prompt = (
+        "Użytkownik zadał pytanie:\n"
+        f"{prompt}\n\n"
+        "Poniżej masz treść kilku stron z internetu wybranych z wyników wyszukiwania.\n"
+        "Na podstawie TYLKO tych danych odpowiedz użytkownikowi po polsku, "
+        "zwięźle i rzeczowo. Jeśli czegoś nie ma w źródłach – powiedz, że brak danych.\n\n"
+        + big_context
+    )
+
+    return api.ask_ai(answer_prompt, execute=False, note="ai_web_answer")
 
 # =================== CLI MAIN ===================
 def banner(cfg: Config, api: GPTChatAPI):
@@ -2028,9 +2163,17 @@ def main():
             return
 
     api = GPTChatAPI(cfg, session_id="local")
+
+    # Udostępnienie API globalnie dla WebOrchestratora
+    import gpt_chat_v3 as _self
+    _self.GLOBAL_API = api
+
     banner(cfg, api)
 
-# Rejestracja narzędzi Intent Engine
+    # --- Intent Engine V2 (nadbudowa nad `ai`) ---
+    intent_engine_v2 = IntentEngineV2(api, registry=registry, debug=True)
+
+    # Rejestracja narzędzi Intent Engine
     registry.register("mqtt", "modules.tools.adapters.mqtt")
 
     # --- helper potwierdzeń dla ostrzeżeń ---
@@ -2071,6 +2214,18 @@ def main():
             # --- PRIORYTET 1: natywne komendy JSON (hardware_bridge) ---
             hw = api.device_command(line)
             if hw:
+                continue
+            hw = api.device_command(line)
+            if hw:
+                print(hw)
+                continue
+
+            # --- CAMERA ---
+            from modules.cam_pi import handle_camera_command
+
+            cam = handle_camera_command(line)
+            if cam is not None:
+                print(cam)
                 continue
 
             # --- PRIORYTET 2: Intent Engine ---
@@ -2545,6 +2700,52 @@ def main():
             # AI
             if line.startswith("ai "):
                 prompt = line[3:].strip()
+                print(f"[DBG] ai prompt: {prompt!r}")
+                intent = api.ai_intent(prompt)
+                print(f"[DBG] intent: {intent}")
+
+                # --- tryb internetowy ---
+                if intent.get("need_web"):
+                    from modules.tools.web_orchestrator import WebOrchestrator
+                    print("[DBG] need_web=True → odpalam WebOrchestrator")
+                    orchestrator = WebOrchestrator(api, registry)
+                    result = orchestrator.run(prompt)
+                    print(f"[DBG] web_orchestrator result.ok={result.get('ok')}, keys={list(result.keys())}")
+
+                    if not result.get("ok"):
+                        print("Nie udało się uzyskać danych z internetu.")
+                        print(api.meter.summary())
+                        continue
+
+                    context = (
+                        "Jesteś asystentem odpowiadającym WYŁĄCZNIE na podstawie źródeł internetowych dostarczonych poniżej.\n"
+                        "Nie wolno Ci zgadywać.\n"
+                        "Jeśli pytanie zawiera KONKRETNĄ datę (np. dzień/miesiąc/rok), "
+                        "a w źródłach brak informacji dokładnie z tej daty, odpowiedz: 'Brak danych dla tej daty.'\n"
+                        "Jeśli pytanie jest ogólne (np. 'najnowsze newsy', 'co nowego', 'informacje z Polski'), "
+                        "to streść to, co wynika ze źródeł – nawet jeśli nie mają jawnej daty.\n\n"
+                        + result["context"]
+                        + "\n\nOdpowiedz zwięźle i w języku naturalnym."
+                    )
+                    final = api.ask_ai(
+                        context,
+                        execute=False,
+                        note="ai_web_answer"
+                    )
+                    print(final)
+                    print(api.meter.summary())
+                    continue
+
+                # --- tryb lokalny + IntentEngineV2 ---
+                print("[DBG] need_web=False → tryb lokalny (IntentEngineV2)")
+                handled, out = intent_engine_v2.handle_ai(prompt)
+                if handled:
+                    if out:
+                        print(out)
+                    print(api.meter.summary())
+                    continue
+
+                # fallback: klasyczne zachowanie
                 print(api.ask_ai(prompt, execute=False, note="ai"))
                 print(api.meter.summary())
                 continue

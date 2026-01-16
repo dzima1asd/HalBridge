@@ -1,0 +1,25 @@
+[Unit]
+Description=HAL Stream Engine (100% Working Version)
+After=network.target mosquitto.service
+Wants=mosquitto.service
+
+[Service]
+Type=simple
+User=hal
+Group=hal
+WorkingDirectory=/home/hal/HALbridge
+ExecStart=/usr/bin/python3 /home/hal/HALbridge/hal_stream_final.py
+Restart=on-failure
+RestartSec=5s
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=hal-stream
+
+# Security
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/home/hal/HALbridge/media
+
+[Install]
+WantedBy=multi-user.target
