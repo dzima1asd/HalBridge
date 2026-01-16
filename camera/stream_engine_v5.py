@@ -269,12 +269,11 @@ class StreamEngine:
 # ------------------- STREAM CONTROL -------------------
     def start_stream(self) -> bool:
         with self.lock:
-            if self.state.stream:
+            if self.state.is_running():
                 self.log("start_stream: already running")
                 return True
 
-            self.state.stream = False
-            self.set_event("stream_starting", "")
+            self.state.set_mode(EngineMode.STARTING, event="stream_starting")
 
         self.log(f"Starting stream (profile={self.state.profile})")
 
@@ -303,9 +302,7 @@ class StreamEngine:
 
         # 3️⃣ mark running
         with self.lock:
-            self.state.stream = True
-            self.state.stream_started_at = time.time()
-            self.set_event("stream_on", "")
+            self.state.mark_stream_started()
 
         # 4️⃣ watchdog
         if not self.watchdog_thread or not self.watchdog_thread.is_alive():
