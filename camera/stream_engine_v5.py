@@ -192,7 +192,7 @@ class StreamEngine:
         lines = []
         lines.append("=== STREAM DIAGNOSTICS ===")
         lines.append(f"Time: {ts()}")
-        lines.append(f"Stream: {self.state.is_running()}")
+        lines.append(f"Mode: {self.state.mode.name}")
         lines.append(f"HTTP: {self.http.is_running()}")
         lines.append(f"Profile: {self.state.profile} ({cfg['w']}x{cfg['h']}@{cfg['fps']})")
         lines.append(f"URL (local): {LOCAL_STREAM_URL}")
@@ -213,9 +213,11 @@ class StreamEngine:
         mqtt_ok = self.state.mqtt_ok
 
         return {
+            "engine_mode": self.state.mode.name.lower(),
+            "engine": "healthy" if self.state.is_running() else ("transitioning" if self.state.is_starting() or self.state.mode.name in ["RESTARTING","STOPPING"] else "idle"),
             "pipeline": "healthy" if pipeline_ok else "failed",
-            "http": "healthy" if http_ok else "failed",
-            "mqtt": "healthy" if mqtt_ok else "failed",
+        "http": "healthy" if http_ok else "failed",
+        "mqtt": "healthy" if mqtt_ok else "failed",
         }
 
     # ------------------- PROFILE -------------------
