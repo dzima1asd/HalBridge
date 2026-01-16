@@ -332,8 +332,12 @@ class StreamEngine:
 
     def stop_stream(self) -> bool:
         self.log("stop_stream requested")
+
+        # allow stop from any mode incl. ERROR
+        self.state.set_mode(EngineMode.STOPPING, event="stream_stopping")
         self.state.set_mode(EngineMode.STOPPING, event="stream_stopping")
         self.cleanup("stream_off", "")
+        self.state.set_mode(EngineMode.IDLE, event="stream_idle")
         self.publish_status(force=True)
         self.publish_event("stream_stopped", {})
         return True
