@@ -111,7 +111,7 @@ class StreamEngine:
 
         self.motion = MotionService(
             stop_event=self.stop_event,
-            is_stream_running=lambda: self.state.stream,
+            is_stream_running=lambda: self.state.is_running(),
             is_http_running=lambda: self.http.is_running(),
             hls_ready=hls_ready,
             count_segments=count_segments,
@@ -120,14 +120,14 @@ class StreamEngine:
         )
 
         self.snapshot = SnapshotService(
-            is_stream_running=lambda: self.state.stream,
+            is_stream_running=lambda: self.state.is_running(),
             is_http_running=lambda: self.http.is_running(),
             hls_ready=hls_ready,
             log=self.log,
         )
 
         self.recorder = RecorderService(
-            is_stream_running=lambda: self.state.stream,
+            is_stream_running=lambda: self.state.is_running(),
             is_http_running=lambda: self.http.is_running(),
             hls_ready=hls_ready,
             log=self.log,
@@ -192,7 +192,7 @@ class StreamEngine:
         lines = []
         lines.append("=== STREAM DIAGNOSTICS ===")
         lines.append(f"Time: {ts()}")
-        lines.append(f"Stream: {self.state.stream}")
+        lines.append(f"Stream: {self.state.is_running()}")
         lines.append(f"HTTP: {self.http.is_running()}")
         lines.append(f"Profile: {self.state.profile} ({cfg['w']}x{cfg['h']}@{cfg['fps']})")
         lines.append(f"URL (local): {LOCAL_STREAM_URL}")
