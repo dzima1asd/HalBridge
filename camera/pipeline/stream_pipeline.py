@@ -103,55 +103,67 @@ class StreamPipeline:
         if profile:
             self.profile = profile
 
-        kill_remote_rpicam()
+        retries = [0.5, 1.0, 2.0]
 
-        pi_log = open(LOG_SSH_PI, "ab", buffering=0)
-        hls_log = open(LOG_FFMPEG_HLS, "ab", buffering=0)
+        for attempt, delay in enumerate(retries, start=1):
+            try:
+                kill_remote_rpicam()
 
-        ssh_cmd = ["ssh", *SSH_OPTS, PI_HOST, self._build_pi_cmd()]
+                pi_log = open(LOG_SSH_PI, "ab", buffering=0)
+                hls_log = open(LOG_FFMPEG_HLS, "ab", buffering=0)
 
-        # --- START RPICAM NA PI ---
-        self.proc_pi = subprocess.Popen(
-            ssh_cmd,
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.PIPE,
-            stderr=pi_log,
-        )
+                ssh_cmd = ["ssh", *SSH_OPTS, PI_HOST, self._build_pi_cmd()]
 
-        # dajemy sekundę na ew. błąd SSH / rpicam
-        time.sleep(1)
+                self.proc_pi = subprocess.Popen(
+                    ssh_cmd,
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.PIPE,
+                    stderr=pi_log,
+                )
 
-        if self.proc_pi.poll() is not None:
-            return False
+                time.sleep(1)
 
-        # --- START FFMPEG (HLS + RTSP) ---
-        self.proc_hls = subprocess.Popen(
-            self._build_ffmpeg_cmd(),
-            stdin=self.proc_pi.stdout,
-            stdout=hls_log,
-            stderr=subprocess.STDOUT,
-            bufsize=0,
-            start_new_session=True,
-            close_fds=True,
-        )
+                if self.proc_pi.poll() is not None:
+                    raise RuntimeError("rpicam exited early")
 
-        # stdout rpicam już niepotrzebny w Pythonie
-        self.proc_pi.stdout.close()
+                self.proc_hls = subprocess.Popen(
+                    self._build_ffmpeg_cmd(),
+                    stdin=self.proc_pi.stdout,
+                    stdout=hls_log,
+                    stderr=subprocess.STDOUT,
+                    bufsize=0,
+                    start_new_session=True,
+                    close_fds=True,
+                )
 
-        # --- CZEKAJ NA HLS + SPRAWDZAJ PROCESY ---
-        for _ in range(20):
-            time.sleep(1)
+                self.proc_pi.stdout.close()
 
-            if self.proc_pi.poll() is not None:
+                for _ in range(20):
+                    time.sleep(1)
+
+                    if self.proc_pi.poll() is not None:
+                        raise RuntimeError("rpicam exited")
+
+                    if self.proc_hls.poll() is not None:
+                        raise RuntimeError("ffmpeg exited")
+
+                    if hls_ready():
+                        return True
+
+                raise RuntimeError("hls not ready")
+
+            except Exception:
+                try:
+                    self.stop()
+                except Exception:
+                    pass
+
+                if attempt < len(retries):
+                    time.sleep(delay)
+                    continue
+
                 return False
 
-            if self.proc_hls.poll() is not None:
-                return False
-
-            if hls_ready():
-                return True
-
-        return False
 
     def stop(self):
         for attr in ("proc_hls", "proc_pi"):

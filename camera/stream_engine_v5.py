@@ -293,6 +293,7 @@ class StreamEngine:
 
         if not self.pipeline.start(self.state.profile):
             self.log("start_stream: pipeline start FAILED")
+            self.state.set_mode(EngineMode.ERROR, event="pipeline_start_failed", error="pipeline start failed")
             self.cleanup("pipeline_start_failed", "pipeline start failed")
             self.publish_status(force=True)
             return False
@@ -408,6 +409,7 @@ class StreamEngine:
             time.sleep(WATCHDOG_INTERVAL_SEC)
 
             if not self.state.is_running():
+                # watchdog sleeps unless RUNNING
                 continue
 
             if not self.pipeline.is_running():
