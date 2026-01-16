@@ -105,6 +105,8 @@ class StreamEngine:
         self.cli_stop = threading.Event()
         self.restart_in_progress = threading.Event()
         self.mqtt_queue = queue.Queue()
+        self.cmd_queue = queue.Queue()
+        self.cmd_worker_thread = None
         self.mqtt_stop_event = threading.Event()
         self.pipeline = StreamPipeline()
         self.http = HLSHttpServer(HTTP_BIND, HTTP_PORT, STREAM_DIR)
@@ -628,27 +630,46 @@ class StreamEngine:
 
     # ========================= MQTT RX (UI -> ENGINE) =========================
 
+    def _cmd_worker(self):
+        self.log("cmd worker: started")
+        while not self.stop_event.is_set():
+            try:
+                cmdline, source = self.cmd_queue.get(timeout=0.5)
+            except queue.Empty:
+                continue
+            try:
+                self._handle_cmd(cmdline, source)
+            except Exception as e:
+                self.log(f"cmd worker error: {e!r}")
+        self.log("cmd worker: stopped")
+
     def _mqtt_worker(self):
         self.log("mqtt worker: started")
         while not self.stop_event.is_set() and not self.mqtt_stop_event.is_set():
-            try:
-                cmdline = self.mqtt_queue.get(timeout=0.5)
-            except queue.Empty:
-                continue
-
-            if not cmdline:
-                continue
-
-            try:
-                self._handle_cmd(cmdline, "mqtt")
-            except Exception as e:
-                self.log(f"mqtt worker error: {e!r}")
-
+            time.sleep(0.5)
         self.log("mqtt worker: stopped")
+
+    def _is_cmd_allowed(self, cmd: str) -> bool:
+        mode = self.state.mode
+        if cmd in ("start","stream_on"):
+            return mode in (EngineMode.IDLE,)
+        if cmd in ("stop","stream_off"):
+            return mode in (EngineMode.RUNNING, EngineMode.STARTING)
+        if cmd in ("low","med","high") or cmd.startswith("profile"):
+            return mode in (EngineMode.RUNNING, EngineMode.IDLE)
+        if cmd in ("status","diag","photo","tailscale_status"):
+            return True
+        # domyślnie pozwalamy
+        return True
 
     def _handle_cmd(self, cmdline: str, source: str = "mqtt"):
         raw = (cmdline or "").strip()
         cmd = raw.lower()
+
+        if not self._is_cmd_allowed(cmd):
+            self.log(f"cmd rejected by mode={self.state.mode.name}: {cmd}")
+            self.ack(cmd, False, f"rejected in mode {self.state.mode.name}")
+            return
 
         if not cmd:
             return
@@ -803,7 +824,7 @@ class StreamEngine:
                 payload = ""
 
             if payload:
-                self.mqtt_queue.put(payload)
+                self.cmd_queue.put((payload,"mqtt"))
 
         c.on_connect = on_connect
         c.on_disconnect = on_disconnect
@@ -860,6 +881,9 @@ def main():
     # MQTT działa równolegle do sterowania z CLI
     ENGINE.mqtt_start()
 
+    ENGINE.cmd_worker_thread = threading.Thread(target=ENGINE._cmd_worker, daemon=True)
+    ENGINE.cmd_worker_thread.start()
+
     cli_thread = threading.Thread(target=ENGINE._cli_reader, daemon=True)
     cli_thread.start()
 
@@ -878,7 +902,7 @@ def main():
             ENGINE.mqtt_stop()
             break
 
-        ENGINE._handle_cmd(cmdline, "cli")
+        ENGINE.cmd_queue.put((cmdline,"cli"))
 
 if __name__ == "__main__":
     main()
