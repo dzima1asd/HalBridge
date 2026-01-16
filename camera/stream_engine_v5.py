@@ -251,6 +251,7 @@ class StreamEngine:
         return True
 
     def _restart_stream_after_profile_change(self):
+        self.state.set_mode(EngineMode.RESTARTING, event="stream_restarting")
         if self.restart_in_progress.is_set():
             self.log("profile restart already in progress")
             return
@@ -265,6 +266,9 @@ class StreamEngine:
             self.publish_status(force=True)
         finally:
             self.restart_in_progress.clear()
+            # state returns to RUNNING via start_stream() on success
+            if not self.state.is_running():
+                self.state.set_mode(EngineMode.IDLE, event="restart_failed")
 
 # ------------------- STREAM CONTROL -------------------
     def start_stream(self) -> bool:
