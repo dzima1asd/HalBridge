@@ -1,57 +1,27 @@
-# ----- SYSTEM & PYTHON -----
+# --- runtime / media ---
+media/
+*.m3u8
+*.ts
+*.mp4
+*.jpg
+*.jpeg
+*.png
+
+# --- logs / temp ---
+*.log
+*.tmp
+*.swp
+*.bak
 __pycache__/
 *.pyc
 *.pyo
-*.pyd
 
-# Virtual envs
-venv/
-.venv/
-.venv_playwright/
+# --- backups / archives ---
+*.tar.gz
+*_backup_*/
+hal_program_backup_*/
+hal_stream_backup_*/
 
-# Editor junk
-*.swp
-*.swo
-
-# Logs & runtime files
-*.log
-*.out
-*.err
-*.db
-*.sqlite3
-*.pyn
-
-# ----- HALBRIDGE RUNTIME -----
-projects/
-logs/
-jobs/
-tmp_test/
-archive/
-bin/
-remote/
-tests/
-
-token_usage.csv
-token_totals.json
-
-# Session/state files
-agent_memory.sqlite3
-agent_memory.sqlit3
-log.txt
-
-# Sensitive / key material
-*.pem
-key.pem
-192.168.100.12-key.pem
-192.168.100.12.pem
-cert.pem
-
-# HALbridge folders never for GitHub
-HALbridge-ChatGPT-to-local-automation/
-modules/gmail_bridge/
-
-# Restore points, backups, garbage
-*.bak
-*.tmp
-.restore_points/
-modification_log.json
+# --- random local artifacts ---
+777
+XXDsdVAD
