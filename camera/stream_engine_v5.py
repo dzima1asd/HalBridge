@@ -401,7 +401,7 @@ class StreamEngine:
         while not self.stop_event.is_set():
             time.sleep(WATCHDOG_INTERVAL_SEC)
 
-            if not self.state.stream:
+            if not self.state.is_running():
                 continue
 
             if not self.pipeline.is_running():
