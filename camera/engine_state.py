@@ -57,10 +57,22 @@ class EngineState:
     def set_mode(self, mode: EngineMode, event: str = "", error: str = ""):
         with self.lock:
             self.mode = mode
+            # stream flag is derived from mode
+            self.stream = (mode == EngineMode.RUNNING)
             if event:
                 self.last_event = event
             if error:
                 self.last_error = error
+
+
+    def is_running(self) -> bool:
+        return self.mode == EngineMode.RUNNING
+
+    def is_starting(self) -> bool:
+        return self.mode in (EngineMode.STARTING, EngineMode.RESTARTING)
+
+    def is_stopping(self) -> bool:
+        return self.mode == EngineMode.STOPPING
 
     def mark_stream_started(self):
         with self.lock:
