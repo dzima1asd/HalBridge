@@ -43,6 +43,11 @@ class EngineState:
     recordings_count: int = 0
     segments_session: int = 0
 
+    crash_count: int = 0
+    restart_count: int = 0
+    last_crash_at: float = 0.0
+    retry_count: int = 0
+
     # --- events / errors ---
     last_event: str = "boot"
     last_error: str = ""

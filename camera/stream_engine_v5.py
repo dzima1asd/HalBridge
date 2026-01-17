@@ -238,7 +238,7 @@ class StreamEngine:
             if self.state.profile == name:
                 self.log(f"profile: already '{name}'")
                 return True
-            was_running = self.state.stream
+            was_running = self.state.is_running()
             self.state.profile = name
             self.set_event("profile_set", "")
 
@@ -292,6 +292,7 @@ class StreamEngine:
                 self.state.profile = DEFAULT_PROFILE
 
         if not self.pipeline.start(self.state.profile):
+            self.state.retry_count += 1
             self.log("start_stream: pipeline start FAILED")
             self.state.set_mode(EngineMode.ERROR, event="pipeline_start_failed", error="pipeline start failed")
             self.cleanup("pipeline_start_failed", "pipeline start failed")
@@ -335,9 +336,11 @@ class StreamEngine:
 
         # allow stop from any mode incl. ERROR
         self.state.set_mode(EngineMode.STOPPING, event="stream_stopping")
-        self.state.set_mode(EngineMode.STOPPING, event="stream_stopping")
         self.cleanup("stream_off", "")
-        self.state.set_mode(EngineMode.IDLE, event="stream_idle")
+        with self.lock:
+            if self.state.mode == EngineMode.ERROR:
+                self.state.restart_count += 1
+                self.state.set_mode(EngineMode.IDLE, event="recovered_from_error")
         self.publish_status(force=True)
         self.publish_event("stream_stopped", {})
         return True
@@ -345,6 +348,9 @@ class StreamEngine:
     def cleanup(self, reason: str, err: str):
         with self.lock:
             self.set_event(reason, err)
+            self.state.crash_count += 1
+            self.state.last_crash_at = time.time()
+            self.state.set_mode(EngineMode.ERROR, event=reason, error=err)
             self.state.recording_active = False
             self.state.manual_recording = False
 
@@ -364,8 +370,6 @@ class StreamEngine:
             self.log(f"cleanup: kill_remote_rpicam error: {e}")
 
         self.http.stop()
-        self.state.set_mode(EngineMode.IDLE, event=reason, error=err)
-        self.log("cleanup: done")
 
     def shutdown(self, reason="shutdown"):
         self.stop_event.set()
@@ -606,14 +610,16 @@ class StreamEngine:
                 "segments_session": self.state.segments_session,
                 "segments_total": count_segments(),
                 "duration": stream_uptime,
+                "crashes": self.state.crash_count,
+                "retries": self.state.retry_count,
             }
             health = self._health_dict()
             net_mode = "tailscale" if tailscale_is_running() else "local"
             ts_ip = tailscale_ip_v4() if tailscale_is_running() else None
 
             return {
-                "state": "active" if self.state.stream else "idle",
-                "stream": self.state.stream,
+                "state": "active" if self.state.is_running() else "idle",
+                "stream": self.state.is_running(),
                 "http_ok": self.http.is_running(),
                 "profile": self.state.profile,
                 "resolution": f"{cfg['w']}x{cfg['h']}",
