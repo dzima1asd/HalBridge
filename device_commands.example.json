@@ -1,0 +1,103 @@
+{
+  "zielona dioda": {
+    "włącz": "mosquitto_pub -h MQTT_HOST -t \"YOUR_TOPIC\" -m \"ON1\"",
+    "wyłącz": "mosquitto_pub -h MQTT_HOST -t \"YOUR_TOPIC\" -m \"OFF1\""
+  },
+  "czerwona dioda": {
+    "włącz": "mosquitto_pub -h MQTT_HOST -t \"YOUR_TOPIC\" -m \"ON2\"",
+    "wyłącz": "mosquitto_pub -h MQTT_HOST -t \"YOUR_TOPIC\" -m \"OFF2\""
+  },
+  "światło 1": {
+    "włącz": "mosquitto_pub -h MQTT_HOST -t \"SHELLY_DEVICE_ID/rpc\" -m \"{\\\"id\\\":1,\\\"src\\\":\\\"mqtt-client\\\",\\\"method\\\":\\\"Switch.Set\\\",\\\"params\\\":{\\\"id\\\":0,\\\"on\\\":true}}\"",
+    "wyłącz": "mosquitto_pub -h MQTT_HOST -t \"SHELLY_DEVICE_ID/rpc\" -m \"{\\\"id\\\":1,\\\"src\\\":\\\"mqtt-client\\\",\\\"method\\\":\\\"Switch.Set\\\",\\\"params\\\":{\\\"id\\\":0,\\\"on\\\":false}}\""
+  },
+  "światło 2": {
+    "włącz": "mosquitto_pub -h MQTT_HOST -t \"SHELLY_DEVICE_ID/rpc\" -m \"{\\\"id\\\":2,\\\"src\\\":\\\"mqtt-client\\\",\\\"method\\\":\\\"Switch.Set\\\",\\\"params\\\":{\\\"id\\\":1,\\\"on\\\":true}}\"",
+    "wyłącz": "mosquitto_pub -h MQTT_HOST -t \"SHELLY_DEVICE_ID/rpc\" -m \"{\\\"id\\\":2,\\\"src\\\":\\\"mqtt-client\\\",\\\"method\\\":\\\"Switch.Set\\\",\\\"params\\\":{\\\"id\\\":1,\\\"on\\\":false}}\""
+  },
+  "kamera stream": {
+    "włącz": {
+      "type": "mqtt",
+      "topic": "YOUR_TOPIC",
+      "payload": "REPLACE_ME"
+    },
+    "wyłącz": {
+      "type": "mqtt",
+      "topic": "YOUR_TOPIC",
+      "payload": "REPLACE_ME"
+    },
+    "status": {
+      "type": "mqtt",
+      "topic": "YOUR_TOPIC",
+      "payload": "REPLACE_ME"
+    }
+  },
+  "zrób zdjęcie": {
+    "type": "mqtt",
+    "topic": "YOUR_STREAM_TOPIC",
+    "payload": "photo"
+  },
+  "zrób {n} zdjęcia": {
+    "type": "mqtt",
+    "topic": "YOUR_STREAM_TOPIC",
+    "payload": "photo"
+  },
+  "rób zdjęcie": {
+    "type": "mqtt",
+    "topic": "YOUR_STREAM_TOPIC",
+    "payload": "photo"
+  },
+  "detekcja ruchu": {
+    "włącz": {
+      "type": "mqtt",
+      "topic": "YOUR_TOPIC",
+      "payload": "REPLACE_ME"
+    },
+    "wyłącz": {
+      "type": "mqtt",
+      "topic": "YOUR_TOPIC",
+      "payload": "REPLACE_ME"
+    }
+  },
+  "nagrywanie": {
+    "włącz": {
+      "type": "mqtt",
+      "topic": "YOUR_TOPIC",
+      "payload": "REPLACE_ME"
+    },
+    "wyłącz": {
+      "type": "mqtt",
+      "topic": "YOUR_TOPIC",
+      "payload": "REPLACE_ME"
+    }
+  },
+  "nagrywanie na ruch": {
+    "włącz": {
+      "type": "mqtt",
+      "topic": "YOUR_TOPIC",
+      "payload": "REPLACE_ME"
+    },
+    "wyłącz": {
+      "type": "mqtt",
+      "topic": "YOUR_TOPIC",
+      "payload": "REPLACE_ME"
+    }
+  },
+  "kamera diagnostyka": {
+    "type": "mqtt",
+    "topic": "YOUR_STREAM_TOPIC",
+    "payload": "diag"
+  },
+  "głośnik": {
+    "włącz": {
+      "type": "mqtt",
+      "topic": "YOUR_TOPIC",
+      "payload": "REPLACE_ME"
+    },
+    "wyłącz": {
+      "type": "mqtt",
+      "topic": "YOUR_TOPIC",
+      "payload": "REPLACE_ME"
+    }
+  }
+}
