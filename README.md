@@ -147,31 +147,6 @@ modules/guardrails.py
 
 ---
 
-Mapa zależności
-
-gpt_chat_v4.py
- ├─ agent_api.py
- ├─ cli_kernel_bridge.py
- │   ├─ execution_models.py
- │   └─ execution_router.py
- │       ├─ execution_classifier.py
- │       ├─ agent_device_layer.py
- │       │   └─ agent_device_bridge.py
- │       │       └─ mqtt.py
- │       └─ agent_api.py
- │           └─ tools/registry.py
- │               ├─ file_access.py
- │               ├─ file_write.py
- │               ├─ file_search.py
- │               ├─ dir_list.py
- │               ├─ web_fetch.py
- │               ├─ mqtt.py
- │               └─ shelly_mqtt_listener.py
- ├─ server_kernel_bridge.py
- └─ voice_kernel_bridge.py
-
----
-
 Podsumowanie
 
 HalBridge to:
