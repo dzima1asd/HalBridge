@@ -1,350 +1,214 @@
-gpt_chat_v3.py to jest głowny plik systemu 
-
-# Architektura gpt_chat_v3.py
-
-`gpt_chat_v3.py` jest głównym agentem systemu HalBridge.  
-To centralny moduł, który integruje:
-
-- konwersację z modelem OpenAI,
-- interpretację intencji użytkownika,
-- narzędzia systemowe (tools),
-- obsługę plików i projektów,
-- integrację z Playwright (moduł webowy),
-- kontrolę urządzeń (MQTT / Shelly),
-- warstwę bezpieczeństwa,
-- mechanizmy analizy i samonaprawy.
-
-W praktyce `gpt_chat_v3.py` działa jak **mini-system operacyjny dla AI**.
-
----
-
-## 1. Główne zadania agenta
-
-1. Odbieranie poleceń użytkownika.
-2. Klasyfikacja celu:
-   - zwykła odpowiedź tekstowa,
-   - wykonanie komendy systemowej,
-   - analiza plików,
-   - sterowanie sprzętem,
-   - zapytanie webowe,
-   - polecenie „aliasowe”,
-   - tool-call wywołany przez model.
-3. Przekazanie zadania do odpowiedniego modułu.
-4. Zbieranie wyników, analiza wykonania, statystyki.
-5. Pilnowanie bezpieczeństwa i naprawa błędów.
-
----
-
-## 2. Warstwa inteligencji (LLM + analiza odpowiedzi)
-
-`gpt_chat_v3.py` wykorzystuje:
-
-- **GPTChatAPI** – obsługa OpenAI, konwersacja, tool-calle.
-- **modules/intelligence.py** – analiza przebiegu akcji, decyzje, jak reagować na odpowiedzi modelu.
-- **modules/metrics.py** – metryki powodzeń/porażek narzędzi.
-- **modules/result_analyzer.py** – ocena wyniku, czy zadanie się powiodło.
-- **modules/self_heal.py** – mechanizmy naprawcze (np. ponawianie akcji, autokorekta strategii).
-
-Ta warstwa pozwala agentowi działać świadomie, adaptacyjnie i bezpiecznie.
-
----
-
-## 3. Warstwa Intencji (Intent Engine)
-
-Aby agent rozumiał polecenia w stylu:
-
-- „włącz światło 2”  
-- „pobierz stronę wp.pl”  
-- „analizuj plik CSV”  
-- „kliknij drugi wynik wyszukiwania”  
-
-używa trzech modułów:
-
-### ⚙️ 3.1. Rozpoznawanie intencji  
-`modules/intents/recognizer.py`  
-Określa typ polecenia:  
-np. `iot.toggle`, `iot.blink`, `browser.fetch`, `system.exec`, `web.search`.
-
-### ⚙️ 3.2. Wydobywanie parametrów  
-`modules/intents/extract_slots.py`  
-Wyciąga szczegóły:  
-urządzenie, liczby, adresy URL, nazwy plików, czasy, etc.
-
-### ⚙️ 3.3. Routing intencji  
-`modules/policy/router.py`  
-Decyduje, **który moduł wykonuje zadanie**:
-
-- `hardware_bridge` (światła, MQTT, Shelly)
-- `web_fetch` / Playwright
-- `browser_controller`
-- `file_access`, `file_search`, `file_write`
-- `code` / wykonanie programów
-- narzędzia systemowe
-
----
-
-## 4. Warstwa narzędzi (TOOLS)
-
-`gpt_chat_v3.py` rejestruje narzędzia z folderu `modules/tools/`, udostępniając je modelowi jako funkcje.
-
-### Główne grupy:
-
-### 🗂 Pliki
-- `file_access.py` – czytanie plików  
-- `file_write.py` – zapisywanie  
-- `file_search.py` – wyszukiwanie w treści  
-- `file_chunk.py` – dzielenie dużych plików  
-- `dir_list.py` – listowanie katalogów  
-
-### 🌐 Web / Playwright
-- `web_fetch.py` – pobieranie stron przez Playwright  
-- `browser_mode.py` – „tryb przeglądarkowy”  
-- `browser_query.py` – sterowanie i analiza stron  
-
-### 📡 Integracja sprzętowa
-- `mqtt.py` – obsługa MQTT (spec + invoke)  
-- `shelly_mqtt_listener.py` – słuchacz zmian urządzeń Shelly  
-
-### 🔧 Registry
-- `registry.py` – rejestracja narzędzi i mapowanie nazw na funkcje
-
-Dzięki temu agent może, przez tool-calle, wykonywać realne akcje w systemie.
-
----
-
-## 5. Warstwa sprzętowa (Hardware bridge)
-
-Za komendy typu:
-
-- „włącz światło 1”
-- „mrugnij dwa razy czerwonym”
-- „sprawdź stan Shelly”
-
-odpowiada:
-
-- **modules/hardware_bridge.py** – tłumaczy intencje na komendy MQTT/Shelly.  
-- **mqtt.py + shelly_mqtt_listener.py** – aktualizacja stanu urządzeń.
-
-Agent nie działa na ślepo — zna aktualny stan świata (światła, czujniki itd.).
-
----
-
-## 6. Warstwa bezpieczeństwa (Guardrails)
-
-Aby agent nie wykonał szkodliwych komend:
-
-- **modules/guardrails.py****:**
-  - filtruje komendy systemowe,
-  - blokuje niebezpieczne operacje,
-  - chroni pliki i środowisko.
-
-W połączeniu z `metrics` i `self_heal` daje to stabilną, odporną na błędy architekturę.
-
----
-
-## 7. Warstwa komunikacji i rozszerzeń
-
-### 🛰 HalBridge server  
-`halbridge_server.py`  
-Zapewnia API do integracji:
-
-- przeglądarkowego rozszerzenia HalBridge,
-- lokalnego terminala,
-- innych programów.
-
-### 🔌 modules/bus.py  
-Prosty event bus do komunikacji między modułami.
-
----
-
-## 8. Pełny przepływ działania (od wpisania polecenia)
-
-1. Użytkownik wpisuje tekst.  
-2. `gpt_chat_v3.py` klasyfikuje wejście:  
-   - lokalna komenda?  
-   - alias?  
-   - tool-call?  
-   - intencja?  
-   - zwykły tekst?  
-3. Jeśli to tekst → idzie do LLM.  
-4. Jeśli to intencja →  
-   - recognizer → extract_slots → router.  
-5. Router wybiera moduł (web, pliki, sprzet, etc.).  
-6. Narzędzie wykonuje zadanie.  
-7. Wynik jest analizowany (`metrics`, `result_analyzer`).  
-8. Agent generuje odpowiedź.  
-
----
-
-## 9. Najważniejsze fakty w skrócie
-
-- `gpt_chat_v3.py` to **centralny mózg** HalBridge.  
-- Spina wszystkie moduły: web, pliki, sprzęt, code, bezpieczeństwo.  
-- Pozwala modelowi wykonywać prawdziwe komendy systemowe.  
-- Dzięki Intent Engine rozumie, co chcesz zrobić.  
-- Jest autentycznym „asystentem operacyjnym”, a nie samym chatem.
-
----
-
-# HalBridge – Web Automation & AI Integration
-
-HalBridge to modułowy system asystenta AI działający w terminalu, rozszerzony o funkcje web automation, sterowanie urządzeniami, analizę danych oraz wykonywanie komend systemowych.  
-System wykorzystuje Playwrighta, własną logikę analizy tekstu oraz dynamiczną interpretację komend użytkownika.
-
----
-
-## 1. Architektura modułu Web / Playwright
-
-Moduł webowy HalBridge umożliwia:
-
-- otwieranie stron internetowych,
-- renderowanie stron w prawdziwej przeglądarce (Chromium headless),
-- ekstrakcję czytelnego tekstu przez Readability,
-- interpretację poleceń typu „otwórz onet” lub „poszukaj newsów”,
-- automatyczne translacje języka naturalnego na URL,
-- przygotowanie zawartości stron dla modułów analizy.
-
-Moduł składa się z sześciu kluczowych plików.
-
----
-
-## 2. Pliki modułu web
-
-### **hal_webfetch.py**
-Najważniejszy element systemu. Odpowiada za:
-
-- uruchomienie Playwright (Chromium) w trybie headless,
-- załadowanie strony z pełnym JavaScriptem,
-- pobranie HTML po pełnym renderowaniu,
-- przetworzenie tekstu przez „readability”,
-- zwrócenie czystego tekstu.
-
-Używany jako zewnętrzny proces.
-
----
-
-### **modules/tools/web_fetch.py**
-Warstwa API dla agenta.  
-Uruchamia `hal_webfetch.py` w osobnym Pythonie (z venv), a następnie:
-
-- pobiera output,
-- zwraca wynik jako słownik JSON,
-- obsługuje błędy subprocessów,
-- zawiera funkcję `resolve_natural_query()`, która tłumaczy komendy na URL:
-  - „otwórz onet” → `https://onet.pl`
-  - „pokaż stronę wp.pl” → `https://wp.pl`
-  - „poszukaj laptopów” → bing search URL
-
----
-
-### **modules/web_bridge_copy.py**
-Minimalistyczny wrapper.  
-Zawiera:
-
-- funkcję `fetch_url(url)` – niskopoziomowy fetcher,
-- `web_fetch(url)` – główna fasada rejestrowana w narzędziach.
-
----
-
-### **browser_helper.py**
-Lekka wersja fetchera dla debugowania.  
-Zwraca:
-
-- tytuł strony (`page.title()`),
-- treść `<body>` (przyciętą do 8 KB).
-
----
-
-### **browser_controller.py**
-Warstwa sterowania przeglądarką poprzez osobny worker:
-
-- „open” – otwarcie strony,
-- „click_result” – kliknięcie linku w wynikach,
-- „back”, „refresh” – przyszłe funkcje nawigacyjne.
-
----
-
-### **command_mapper_browser.json**
-Mapa komend języka naturalnego:
-
-```json
-{
-  "otwórz": "open",
-  "klik": "click_result",
-  "wstecz": "back",
-  "odśwież": "refresh"
-}
-
-Umożliwia agentowi obsługę komend mówionych.
-
-
----
-
-3. Dlaczego Playwright?
-
-Zwykłe żądania HTTP pobierają surowy HTML.
-HalBridge potrzebuje:
-
-wykonania JavaScript,
-
-dynamicznego DOM,
-
-ładowania SPA,
-
-pełnego tekstu widocznego w przeglądarce.
-
-
-Dlatego Playwright + Chromium headless jest kluczowy.
-
-
----
-
-4. Instalacja środowiska (zalecane)
-
-python3 -m venv .venv_playwright
-source .venv_playwright/bin/activate
-pip install playwright readability-lxml
-playwright install
-
-
----
-
-5. Odpalanie web_fetch
-
-python modules/tools/web_fetch.py
-
-lub przez agenta:
-
-otwórz onet
-szukaj espresso machine ranking
-pokaż stronę wp.pl
-
-
----
-
-6. Struktura modułu
-
-hal_webfetch.py
-modules/
- ├ tools/
- │   └ web_fetch.py
- ├ web_bridge_copy.py
-browser_helper.py
-browser_controller.py
-command_mapper_browser.json
-
-
----
-
-7. Status projektu
-
-Moduł działa stabilnie w środowisku headless.
-Planowane:
-
-klikanie linków,
-
-interaktywne przeglądanie stron,
-
-integracja z systemem poleceń agenta,
-
-automatyczne streszczenia stron.
+Architektura gpt_chat_v4.py
+gpt_chat_v4.py jest głównym interfejsem agenta HalBridge.
+Pełni rolę:
+obsługi konwersacji (LLM),
+interakcji z użytkownikiem (CLI),
+integracji z narzędziami,
+przekazywania poleceń do Execution Kernel.
+👉 Jest to warstwa sterująca, a nie wykonawcza.
+1. Główne zadania agenta
+Odbieranie poleceń użytkownika
+Obsługa konwersacji z OpenAI
+Przekazywanie poleceń do kernela
+Obsługa tool-calli
+Wyświetlanie wyników
+2. Execution Kernel (centrum systemu)
+Kernel odpowiada za wykonanie poleceń.
+📁 modules/execution_models.py
+definiuje:
+ExecutionRequest
+ExecutionResult
+👉 wspólny format danych w systemie
+📁 modules/execution_router.py
+główna logika wykonawcza
+analizuje polecenie
+wybiera co zrobić
+👉 to jest faktyczny „mózg wykonawczy”
+📁 modules/execution_classifier.py
+klasyfikuje polecenia:
+device
+conversation
+inne
+👉 decyduje kierunek działania
+3. Routing i wykonanie
+Przepływ:
+powstaje ExecutionRequest
+router analizuje polecenie
+classifier wybiera typ
+wywoływany jest moduł
+powstaje ExecutionResult
+4. Warstwa narzędzi (TOOLS)
+📁 modules/tools/
+Zestaw narzędzi dostępnych dla systemu i AI.
+🗂 Pliki
+📁 file_access.py
+odczyt plików
+📁 file_write.py
+zapis plików
+📁 file_search.py
+wyszukiwanie w plikach
+📁 dir_list.py
+listowanie katalogów
+🌐 Web / Playwright
+📁 web_fetch.py
+pobieranie stron (Playwright)
+renderowanie JavaScript
+📡 Integracje
+📁 mqtt.py
+komunikacja MQTT
+📁 shelly_mqtt_listener.py
+odbiór stanów urządzeń Shelly
+🔧 Registry
+📁 registry.py
+rejestr narzędzi
+mapowanie nazw → funkcje
+5. Warstwa sprzętowa (Device Layer)
+📁 modules/agent_device_layer.py
+przyjmuje polecenia typu:
+„włącz światło”
+tłumaczy na operacje sprzętowe
+📁 modules/agent_device_bridge.py
+wykonuje operacje:
+MQTT
+komunikacja z urządzeniami
+6. Interfejsy systemu (Kernel Bridges)
+📁 modules/cli_kernel_bridge.py
+CLI → ExecutionRequest
+📁 modules/server_kernel_bridge.py
+API → ExecutionRequest
+zwraca JSON
+📁 modules/voice_kernel_bridge.py
+voice → ExecutionRequest
+integracja z TTS/STT
+7. Warstwa AI
+📁 modules/agent_api.py (GPTChatAPI)
+komunikacja z OpenAI
+obsługa tool-calli
+zarządzanie historią
+8. Bezpieczeństwo
+📁 modules/guardrails.py
+filtruje komendy
+blokuje niebezpieczne operacje
+9. Mapa zależności
+Poniżej uproszczona mapa: kto woła kogo i którędy płynie rozkaz.
+Główna ścieżka CLI
+gpt_chat_v4.py
+↓
+modules/agent_api.py
+↓
+modules/cli_kernel_bridge.py
+↓
+modules/execution_models.py
+↓
+modules/execution_router.py
+↓
+modules/execution_classifier.py
+↓
+wybór ścieżki wykonania
+Ścieżka urządzeń
+execution_router.py
+↓
+modules/agent_device_layer.py
+↓
+modules/agent_device_bridge.py
+↓
+modules/tools/mqtt.py / urządzenia Shelly
+Ścieżka konwersacji
+execution_router.py
+↓
+modules/agent_api.py
+↓
+OpenAI / tool-calls
+↓
+modules/tools/registry.py
+↓
+konkretne narzędzie z modules/tools/
+Ścieżka webowa
+execution_router.py lub agent_api.py
+↓
+modules/tools/web_fetch.py
+↓
+Playwright / warstwa pobierania stron
+↓
+wynik tekstowy wraca do agenta
+Ścieżka plikowa
+execution_router.py lub agent_api.py
+↓
+modules/tools/registry.py
+↓
+file_access.py
+file_write.py
+file_search.py
+dir_list.py
+Ścieżka serwerowa
+zewnętrzne API / halbridge_server.py
+↓
+modules/server_kernel_bridge.py
+↓
+ExecutionRequest
+↓
+execution_router.py
+↓
+wykonanie
+↓
+ExecutionResult
+↓
+JSON response
+Ścieżka głosowa
+system voice / STT
+↓
+modules/voice_kernel_bridge.py
+↓
+ExecutionRequest
+↓
+execution_router.py
+↓
+wykonanie
+↓
+ExecutionResult
+↓
+TTS / odpowiedź głosowa
+10. Schemat zależności w skrócie
+Plain text
+gpt_chat_v4.py
+ ├─ agent_api.py
+ ├─ cli_kernel_bridge.py
+ │   ├─ execution_models.py
+ │   └─ execution_router.py
+ │       ├─ execution_classifier.py
+ │       ├─ agent_device_layer.py
+ │       │   └─ agent_device_bridge.py
+ │       │       └─ mqtt.py
+ │       └─ agent_api.py
+ │           └─ tools/registry.py
+ │               ├─ file_access.py
+ │               ├─ file_write.py
+ │               ├─ file_search.py
+ │               ├─ dir_list.py
+ │               ├─ web_fetch.py
+ │               ├─ mqtt.py
+ │               └─ shelly_mqtt_listener.py
+ ├─ server_kernel_bridge.py
+ └─ voice_kernel_bridge.py
+11. Jak to czytać praktycznie
+gpt_chat_v4.py przyjmuje polecenie
+bridge zamienia je na wspólny format
+kernel decyduje, co z tym zrobić
+wykonanie idzie do:
+AI,
+narzędzi,
+urządzeń,
+webu,
+plików
+👉 Czyli rdzeń systemu nie siedzi już w jednym wielkim pliku, tylko w układzie:
+interfejs → kernel → wykonanie
+12. Podsumowanie
+System składa się z trzech głównych części:
+🎯 Interfejs
+gpt_chat_v4.py
+🧠 Kernel
+execution_router, classifier, models
+⚙️ Wykonanie
+tools
+device layer
+integracje
