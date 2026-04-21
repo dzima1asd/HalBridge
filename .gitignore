@@ -120,3 +120,5 @@ modules/gmail_bridge/archive_20250823_141800/
 modules/gmail_bridge/gmail_ingest_unified.copy3.py
 projects/default/
 tests/engine_torture_test.sh
+modules/gmail_bridge/income_matched.json
+modules/gmail_bridge/income_model.json
