@@ -33,7 +33,7 @@ T_HEALTH = f"{BASE_TOPIC}/health"
 T_EVENT = f"{BASE_TOPIC}/event"
 
 # System Configuration
-PI_HOST = "zero@192.168.100.16"  # SSH to Raspberry Pi
+PI_HOST = "zero@PI_HOST_IP"  # SSH to Raspberry Pi
 HTTP_PORT = 8081  # Port for HTTP server
 
 # Directories

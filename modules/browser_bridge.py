@@ -29,7 +29,7 @@ class BrowserBridge:
         self._yt_worker_proc = None
         self._yt_last_volume_before_mute = 0.5
         self._speaker_auto_started = False
-        self._speaker_mqtt_host = "192.168.100.12"
+        self._speaker_mqtt_host = "MQTT_HOST"
         self._speaker_topic_prefix = "shellyplus1pm-e465b8940d10"
 
     def _ensure(self):

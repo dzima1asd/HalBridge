@@ -36,7 +36,7 @@ from typing import Optional
 # =========================================================
 # KONFIGURACJA (ENV -> default)
 # =========================================================
-PI_HOST = os.getenv("CAM_PI_HOST", "zero@192.168.100.16")
+PI_HOST = os.getenv("CAM_PI_HOST", "zero@PI_HOST_IP")
 PI_PASS = os.getenv("CAM_PI_PASS", "niemodlin")
 PI_PORT = os.getenv("CAM_PI_PORT", "22")
 PI_HOME = os.getenv("CAM_PI_HOME", "/home/zero")

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -u
 
-PI_HOST="zero@192.168.100.16"
-SERVER_IP="192.168.100.12"
+PI_HOST="zero@PI_HOST_IP"
+SERVER_IP="MQTT_HOST"
 TCP_PORT=8554
 HTTP_PORT=8081
 STREAM_DIR="/home/hal/HALbridge/media/stream"

@@ -40,8 +40,8 @@ STATE_PATH = STATE_DIR / "hw_context.json"
 # ==========================================
 
 _SHELLY_LIGHT_MAP_RAW = {
-    "światło 1": {"ip": "192.168.100.13", "id": 0},
-    "światło 2": {"ip": "192.168.100.13", "id": 1},
+    "światło 1": {"ip": "SHELLY_DEVICE_IP", "id": 0},
+    "światło 2": {"ip": "SHELLY_DEVICE_IP", "id": 1},
 }
 # klucze znormalizowane tak jak _slug()
 # (żeby "światlo 1" z device_commands.json pasowało)
@@ -478,7 +478,7 @@ class HardwareBridge:
                     res = subprocess.run(
                         [
                             "mosquitto_pub",
-                            "-h", "192.168.100.12",
+                            "-h", "MQTT_HOST",
                             "-t", str(topic),
                             "-m", str(payload if payload is not None else ""),
                         ],

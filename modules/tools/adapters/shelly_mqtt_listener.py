@@ -68,7 +68,7 @@ def on_message(c, u, msg):
 def main():
     client = mqtt.Client()
     print("[SHELLY] łączę z MQTT...")
-    client.connect("192.168.100.12", 1883, 60)
+    client.connect("MQTT_HOST", 1883, 60)
     client.subscribe(TOPIC)
     client.on_message = on_message
     print("[SHELLY] słucham:", TOPIC)

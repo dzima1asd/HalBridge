@@ -111,7 +111,7 @@ config = Config()
 api = GPTChatAPI(config)
 
 # --- AUTORYZACJA ---
-API_TOKEN = os.getenv("HALBRIDGE_TOKEN", "bardzo_sekretny_token")
+API_TOKEN = os.getenv("HALBRIDGE_TOKEN", "CHANGE_ME_TOKEN")
 
 def check_token():
     token = request.headers.get("Authorization", "")

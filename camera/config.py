@@ -20,7 +20,7 @@ T_EVENT = f"{BASE_TOPIC}/event"
 
 # ========================= SSH / PI =========================
 
-PI_HOST = "zero@192.168.100.16"
+PI_HOST = "zero@PI_HOST_IP"
 
 SSH_OPTS = [
     "-n",
