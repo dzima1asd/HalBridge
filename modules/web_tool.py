@@ -1,3 +1,19 @@
+# LEGACY / DO NOT EXTEND
+# ------------------------------------------------------------
+# Ten plik jest starszą, uproszczoną wersją fetchera webowego.
+# Nie stanowi oficjalnej ścieżki runtime HALbridge.
+#
+# Aktualna ścieżka kanoniczna:
+# - modules/tools/web_fetch.py
+# - hal_webfetch.py
+# - modules/tools/browser_query.py
+#
+# Status:
+# - legacy
+# - nie rozwijać
+# - nie podpinać do nowego server_api
+# ------------------------------------------------------------
+
 import sys
 from playwright.sync_api import sync_playwright
 

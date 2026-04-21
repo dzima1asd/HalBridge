@@ -1,6 +1,6 @@
 """
 bank_query.py — prosty moduł CLI/JSON do odczytu Twojej bazy (~/.local/share/bankdb/bank.db)
-Przyjazny dla gpt_chat_v3.py: każda odpowiedź to pojedynczy JSON (lub tablica JSON).
+Przyjazny dla gpt_chat_v4.py: każda odpowiedź to pojedynczy JSON (lub tablica JSON).
 
 PRZYKŁADY:
   bank_query.py help

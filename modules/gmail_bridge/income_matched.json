@@ -1,27 +1,32 @@
 [
   {
-    "id": "19aeedcde76f82d6",
-    "amount": 3960.0,
+    "id": "19c4cf4fe0da71b2",
+    "amount": 1773.66,
     "subject": "Wiadomość z Inteligo"
   },
   {
-    "id": "19ae0a8e9c87af5e",
-    "amount": 305.0,
+    "id": "19c4ceb433e968be",
+    "amount": 247.5,
     "subject": "Wiadomość z Inteligo"
   },
   {
-    "id": "19ae0a884e0d6911",
-    "amount": 500.0,
+    "id": "19c421146b7e923a",
+    "amount": 630.0,
     "subject": "Wiadomość z Inteligo"
   },
   {
-    "id": "19ae0a83676ac81f",
-    "amount": 500.0,
+    "id": "19c3017cd9178005",
+    "amount": 250.0,
     "subject": "Wiadomość z Inteligo"
   },
   {
-    "id": "19ae0a7d220dc51a",
-    "amount": 500.0,
+    "id": "19c2fff7550e2e82",
+    "amount": 200.0,
+    "subject": "Wiadomość z Inteligo"
+  },
+  {
+    "id": "19c1eab66f131fd8",
+    "amount": 2027.04,
     "subject": "Wiadomość z Inteligo"
   }
 ]

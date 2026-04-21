@@ -1,20 +1,14 @@
 import subprocess
-import traceback
 import urllib.request
 from urllib.parse import quote_plus
 
-MAX_TEXT_LEN = 150_000
+from modules.web_settings import playwright_python, hal_webfetch_path
 
-# Python z venv, gdzie jest playwright + readability
-PLAYWRIGHT_PY = "/home/hal/HALbridge/.venv_playwright/bin/python"
-WEB_TOOL_PATH = "/home/hal/HALbridge/hal_webfetch.py"
+MAX_TEXT_LEN = 150_000
+SUBPROCESS_TIMEOUT = 12
 
 
 def _fetch_with_urllib(url: str) -> str:
-    """
-    Fallback: zwykłe pobranie strony z nagłówkiem User-Agent,
-    żeby wyszukiwarki nie traktowały nas jak bota z epoki kamienia łupanego.
-    """
     req = urllib.request.Request(
         url,
         headers={
@@ -41,100 +35,55 @@ def invoke(payload: dict) -> dict:
     if not url:
         return {"ok": False, "error": "missing_url"}
 
-    cmd = [PLAYWRIGHT_PY, WEB_TOOL_PATH, url]
+    cmd = [playwright_python(), hal_webfetch_path(), url]
 
-    # 1) Najpierw próbujemy hal_webfetch (playwright + readability)
     try:
         raw = subprocess.check_output(
             cmd,
             stderr=subprocess.STDOUT,
-            timeout=30,
+            timeout=SUBPROCESS_TIMEOUT,
         )
         text = raw.decode("utf-8", errors="replace").strip()
 
-        # Jeśli coś faktycznie przyszło → używamy
         if text:
             return {
                 "ok": True,
                 "url": url,
                 "text": text[:MAX_TEXT_LEN],
+                "source": "hal_webfetch",
+                "used_fallback": False,
             }
 
-        # Jeśli hal_webfetch zwrócił pustkę → lecimy fallbackiem
-        html = _fetch_with_urllib(url).strip()
-        if html:
-            return {
-                "ok": True,
-                "url": url,
-                "text": html[:MAX_TEXT_LEN],
-            }
-
-        # Pusto po obu próbach
-        return {
-            "ok": False,
-            "error": "empty_content",
-            "details": "hal_webfetch empty & urllib empty",
-        }
-
+    except subprocess.TimeoutExpired as e:
+        details = f"timeout after {SUBPROCESS_TIMEOUT}s"
     except subprocess.CalledProcessError as e:
-        out = e.output.decode("utf-8", errors="replace") if e.output else ""
-
-        # Przy błędzie subprocessu też próbujemy fallback
-        html = _fetch_with_urllib(url).strip()
-        if html:
-            return {
-                "ok": True,
-                "url": url,
-                "text": html[:MAX_TEXT_LEN],
-            }
-
-        return {
-            "ok": False,
-            "error": "subprocess_failed",
-            "details": out[:2000],
-        }
-
+        details = e.output.decode("utf-8", errors="replace")[:2000] if e.output else "subprocess failed"
     except Exception as e:
-        # Awaria totalna subprocessu → ostatnia próba: urllib
-        html = _fetch_with_urllib(url).strip()
-        if html:
-            return {
-                "ok": True,
-                "url": url,
-                "text": html[:MAX_TEXT_LEN],
-            }
+        details = f"{type(e).__name__}: {e}"
+    else:
+        details = "hal_webfetch returned empty output"
 
+    html = _fetch_with_urllib(url).strip()
+    if html:
         return {
-            "ok": False,
-            "error": str(e),
-            "trace": traceback.format_exc(),
+            "ok": True,
+            "url": url,
+            "text": html[:MAX_TEXT_LEN],
+            "source": "urllib_fallback",
+            "used_fallback": True,
+            "fallback_reason": details,
         }
 
+    return {
+        "ok": False,
+        "error": "web_fetch_failed",
+        "url": url,
+        "details": details,
+    }
 
-def resolve_natural_query(text: str) -> str | None:
-    if not text:
-        return None
-    t = text.strip().lower()
 
-    # "otwórz onet"
-    if t.startswith(("otwórz ", "otworz ")):
-        q = t.split(" ", 1)[1].strip()
-        if "." not in q:
-            q = q + ".pl"
-        if not q.startswith("http"):
-            q = "https://" + q
+def resolve_natural_query(query: str) -> str:
+    q = (query or "").strip()
+    if q.startswith("http://") or q.startswith("https://"):
         return q
-
-    # "pokaż stronę xyz.com"
-    if "stronę" in t or "strone" in t:
-        for w in t.split():
-            if "." in w:
-                if not w.startswith("http"):
-                    w = "https://" + w
-                return w
-
-    # "poszukaj / wyszukaj / szukaj ..."
-    if any(k in t for k in ("poszukaj", "wyszukaj", "szukaj")):
-        return "https://www.bing.com/search?q=" + quote_plus(text)
-
-    return None
+    return f"https://www.bing.com/search?q={quote_plus(q)}"

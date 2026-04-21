@@ -3,22 +3,18 @@
     "włącz": "mosquitto_pub -h 192.168.100.12 -t \"led/control\" -m \"ON1\"",
     "wyłącz": "mosquitto_pub -h 192.168.100.12 -t \"led/control\" -m \"OFF1\""
   },
-
   "czerwona dioda": {
     "włącz": "mosquitto_pub -h 192.168.100.12 -t \"led/control\" -m \"ON2\"",
     "wyłącz": "mosquitto_pub -h 192.168.100.12 -t \"led/control\" -m \"OFF2\""
   },
-
   "światło 1": {
     "włącz": "mosquitto_pub -h 192.168.100.12 -t \"shellyplus2pm-c4d8d5560dcc/rpc\" -m \"{\\\"id\\\":1,\\\"src\\\":\\\"mqtt-client\\\",\\\"method\\\":\\\"Switch.Set\\\",\\\"params\\\":{\\\"id\\\":0,\\\"on\\\":true}}\"",
     "wyłącz": "mosquitto_pub -h 192.168.100.12 -t \"shellyplus2pm-c4d8d5560dcc/rpc\" -m \"{\\\"id\\\":1,\\\"src\\\":\\\"mqtt-client\\\",\\\"method\\\":\\\"Switch.Set\\\",\\\"params\\\":{\\\"id\\\":0,\\\"on\\\":false}}\""
   },
-
   "światło 2": {
     "włącz": "mosquitto_pub -h 192.168.100.12 -t \"shellyplus2pm-c4d8d5560dcc/rpc\" -m \"{\\\"id\\\":2,\\\"src\\\":\\\"mqtt-client\\\",\\\"method\\\":\\\"Switch.Set\\\",\\\"params\\\":{\\\"id\\\":1,\\\"on\\\":true}}\"",
     "wyłącz": "mosquitto_pub -h 192.168.100.12 -t \"shellyplus2pm-c4d8d5560dcc/rpc\" -m \"{\\\"id\\\":2,\\\"src\\\":\\\"mqtt-client\\\",\\\"method\\\":\\\"Switch.Set\\\",\\\"params\\\":{\\\"id\\\":1,\\\"on\\\":false}}\""
   },
-
   "kamera stream": {
     "włącz": {
       "type": "mqtt",
@@ -36,25 +32,21 @@
       "payload": "status"
     }
   },
-
   "zrób zdjęcie": {
     "type": "mqtt",
     "topic": "hal/stream/cmd",
     "payload": "photo"
   },
-
   "zrób {n} zdjęcia": {
     "type": "mqtt",
     "topic": "hal/stream/cmd",
     "payload": "photo"
   },
-
   "rób zdjęcie": {
     "type": "mqtt",
     "topic": "hal/stream/cmd",
     "payload": "photo"
   },
-
   "detekcja ruchu": {
     "włącz": {
       "type": "mqtt",
@@ -67,7 +59,6 @@
       "payload": "motion_off"
     }
   },
-
   "nagrywanie": {
     "włącz": {
       "type": "mqtt",
@@ -80,7 +71,6 @@
       "payload": "rec_off"
     }
   },
-
   "nagrywanie na ruch": {
     "włącz": {
       "type": "mqtt",
@@ -93,10 +83,21 @@
       "payload": "rec_motion_off"
     }
   },
-
   "kamera diagnostyka": {
     "type": "mqtt",
     "topic": "hal/stream/cmd",
     "payload": "diag"
+  },
+  "głośnik": {
+    "włącz": {
+      "type": "mqtt",
+      "topic": "shellyplus1pm-e465b8940d10/command/switch:0",
+      "payload": "on"
+    },
+    "wyłącz": {
+      "type": "mqtt",
+      "topic": "shellyplus1pm-e465b8940d10/command/switch:0",
+      "payload": "off"
+    }
   }
 }

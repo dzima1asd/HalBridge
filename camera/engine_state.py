@@ -1,5 +1,6 @@
 # camera/engine_state.py
 # ETAP 2 – Centralne źródło prawdy o stanie silnika
+# Defaulty feature-flag są czytane z camera/config.py (wykonywany przy imporcie)
 
 from enum import Enum, auto
 from dataclasses import dataclass, field
@@ -16,29 +17,44 @@ class EngineMode(Enum):
     ERROR = auto()
 
 
+def _cfg_bool(name: str, fallback: bool) -> bool:
+    try:
+        import camera.config as cfg
+        return bool(getattr(cfg, name, fallback))
+    except Exception:
+        return bool(fallback)
+
+
+def _motion_enabled_default() -> bool:
+    return _cfg_bool("MOTION_ENABLED_DEFAULT", True)
+
+
+def _motion_photo_default() -> bool:
+    return _cfg_bool("MOTION_PHOTO_ENABLED_DEFAULT", True)
+
+
+def _motion_record_default() -> bool:
+    return _cfg_bool("MOTION_RECORD_ENABLED_DEFAULT", False)
+
+
 @dataclass
 class EngineState:
-    # --- lifecycle ---
     mode: EngineMode = EngineMode.IDLE
     started_at: float = field(default_factory=time.time)
     stream_started_at: float = 0.0
 
-    # --- flags ---
     stream: bool = False
     mqtt_ok: bool = False
 
-    # --- profile ---
     profile: str = ""
 
-    # --- motion / media ---
-    motion_enabled: bool = True
-    motion_photo_enabled: bool = True
-    motion_record_enabled: bool = False
+    motion_enabled: bool = field(default_factory=_motion_enabled_default)
+    motion_photo_enabled: bool = field(default_factory=_motion_photo_default)
+    motion_record_enabled: bool = field(default_factory=_motion_record_default)
 
     manual_recording: bool = False
     recording_active: bool = False
 
-    # --- stats ---
     photos_taken: int = 0
     recordings_count: int = 0
     segments_session: int = 0
@@ -48,27 +64,19 @@ class EngineState:
     last_crash_at: float = 0.0
     retry_count: int = 0
 
-    # --- events / errors ---
     last_event: str = "boot"
     last_error: str = ""
 
-    # --- internal ---
     lock: threading.RLock = field(default_factory=threading.RLock, repr=False)
-
-    # =========================
-    # Bezpieczne operacje stanu
-    # =========================
 
     def set_mode(self, mode: EngineMode, event: str = "", error: str = ""):
         with self.lock:
             self.mode = mode
-            # stream flag is derived from mode
             self.stream = (mode == EngineMode.RUNNING)
             if event:
                 self.last_event = event
             if error:
                 self.last_error = error
-
 
     def is_running(self) -> bool:
         return self.mode == EngineMode.RUNNING

@@ -38,12 +38,12 @@ def _dispatch_iot(context: Dict):
         return
 
     try:
-        from hardware_bridge import HardwareBridge
+        from modules.hardware_adapter import get_bridge
     except Exception:
         return
 
     try:
-        hb = HardwareBridge()
+        hb = get_bridge()
         hb.reload()
         result = hb.execute(text)
         if result:

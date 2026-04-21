@@ -24,7 +24,7 @@ from typing import Optional, Tuple
 class IntentEngineV2:
     def __init__(self, api, registry=None, debug: bool = True) -> None:
         """
-        :param api: instancja GPTChatAPI z gpt_chat_v3.py
+        :param api: instancja GPTChatAPI z gpt_chat_v4.py
         :param registry: przyszłościowy ToolRegistry
         :param debug: czy wypisywać logi z IntentEngineV2
         """

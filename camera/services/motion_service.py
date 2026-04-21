@@ -1,15 +1,14 @@
-# camera/services/motion_service.py
-
 import threading
 import time
 import subprocess
+import re
 from typing import Optional
 
 from camera.config import (
     MOTION_SCENE_THRESHOLD,
     MOTION_COOLDOWN_SEC,
     MOTION_POLL_RETRY_SEC,
-    LOCAL_STREAM_URL,
+    MOTION_STREAM_URL,
 )
 
 
@@ -33,16 +32,24 @@ class MotionService:
         self.on_motion_cb = on_motion_cb
         self.log = log
 
+        self.photo_enabled = True
+        self.record_enabled = False
         self.enabled = True
+
         self.thread: Optional[threading.Thread] = None
         self.proc_motion: Optional[subprocess.Popen] = None
 
         self.last_motion_ts = 0.0
         self.last_motion_start_ts = 0.0
 
-    # ------------------- API -------------------
+        self._ydif_re = re.compile(r"lavfi\.signalstats\.YDIF=([0-9]*\.?[0-9]+)")
+        self._ydif_threshold = float(MOTION_SCENE_THRESHOLD)
+        self._ydif_hits = 0
+        self._ydif_hits_required = 2
+        self._last_ydif_log_ts = 0.0
 
     def start(self):
+        self.enabled = True
         if self.thread and self.thread.is_alive():
             return
         self.thread = threading.Thread(target=self._worker, daemon=True)
@@ -57,10 +64,12 @@ class MotionService:
         if not self.enabled:
             self._stop_proc()
 
+    def set_actions(self, photo: bool, record: bool):
+        self.photo_enabled = bool(photo)
+        self.record_enabled = bool(record)
+
     def is_running(self) -> bool:
         return self.thread is not None and self.thread.is_alive()
-
-    # ------------------- INTERNAL -------------------
 
     def _stop_proc(self):
         p = self.proc_motion
@@ -78,30 +87,30 @@ class MotionService:
             self.proc_motion = None
 
     def _build_motion_ffmpeg_cmd(self):
-        # metadata=print MUSI iść na stdout, loglevel=info
-        vf = f"select='gt(scene,{MOTION_SCENE_THRESHOLD})',metadata=print:file=-"
+        vf = "tblend=all_mode=difference,signalstats,metadata=print:file=-"
 
         return [
             "ffmpeg",
             "-hide_banner",
-            "-loglevel", "info",
             "-nostdin",
-            "-reconnect", "1",
-            "-reconnect_streamed", "1",
-            "-reconnect_delay_max", "2",
-            "-rw_timeout", "5000000",
+            "-nostats",
+            "-loglevel", "error",
             "-fflags", "+genpts",
-            "-i", LOCAL_STREAM_URL,
+            "-rtsp_transport", "tcp", "-i", MOTION_STREAM_URL,
             "-an",
             "-vf", vf,
             "-f", "null",
-            "-",
+            "-"
         ]
 
-    # ------------------- WORKER -------------------
+    def _maybe_log_ydif(self, ydif: float):
+        now = time.time()
+        if now - self._last_ydif_log_ts >= 5.0:
+            self._last_ydif_log_ts = now
+            self.log(f"motion: ydif={ydif:.3f} thr={self._ydif_threshold:.3f} hits={self._ydif_hits}/{self._ydif_hits_required}")
 
     def _worker(self):
-        self.log("motion: started")
+        self.log("motion: worker started")
         time.sleep(1.5)
 
         while not self.stop_event.is_set():
@@ -110,7 +119,6 @@ class MotionService:
                 time.sleep(0.5)
                 continue
 
-            # 🔒 WARUNEK GOTOWOŚCI – BEZ TEGO NIE STARTUJEMY FFMPEG
             if not (
                 self.is_stream_running()
                 and self.is_http_running()
@@ -124,13 +132,17 @@ class MotionService:
             if now - self.last_motion_start_ts < 3.0:
                 time.sleep(0.5)
                 continue
+
             self.last_motion_start_ts = now
+
+            warmup_until = time.time() + 10.0
+            self._ydif_hits = 0
 
             try:
                 self.proc_motion = subprocess.Popen(
                     self._build_motion_ffmpeg_cmd(),
                     stdout=subprocess.PIPE,
-                    stderr=subprocess.DEVNULL,
+                    stderr=subprocess.STDOUT,
                     bufsize=1,
                     text=True,
                     start_new_session=True,
@@ -146,23 +158,52 @@ class MotionService:
                         self.log("motion: ffmpeg exited, restarting")
                         break
 
-                    line = self.proc_motion.stdout.readline() if self.proc_motion.stdout else ""
+                    line = self.proc_motion.stdout.readline()
                     if not line:
                         time.sleep(0.05)
                         continue
 
                     line = line.strip()
-                    if "lavfi.scene_score" in line:
-                        now = time.time()
-                        if now - self.last_motion_ts < MOTION_COOLDOWN_SEC:
-                            continue
-                        self.last_motion_ts = now
-                        self.on_motion_cb(line)
+
+                    if time.time() < warmup_until:
+                        continue
+
+                    m = self._ydif_re.search(line)
+                    if not m:
+                        continue
+
+                    try:
+                        ydif = float(m.group(1))
+                    except Exception:
+                        continue
+
+                    self._maybe_log_ydif(ydif)
+
+                    now = time.time()
+                    if now - self.last_motion_ts < MOTION_COOLDOWN_SEC:
+                        continue
+
+                    if ydif >= self._ydif_threshold:
+                        self._ydif_hits += 1
+                    else:
+                        if self._ydif_hits > 0:
+                            self._ydif_hits -= 1
+
+                    if self._ydif_hits < self._ydif_hits_required:
+                        continue
+
+                    self.last_motion_ts = now
+                    self._ydif_hits = 0
+
+                    if not self.photo_enabled and not self.record_enabled:
+                        self.log("motion: detected but no actions enabled")
+                        continue
+
+                    self.on_motion_cb(f"ydif={ydif:.3f} thr={self._ydif_threshold:.3f}")
 
             except Exception as e:
                 self.log(f"motion: error: {e!r}")
+
             finally:
                 self._stop_proc()
                 time.sleep(MOTION_POLL_RETRY_SEC)
-
-        self.log("motion: stopped")

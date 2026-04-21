@@ -16,6 +16,9 @@ from camera.config import (
     RPICAM_CONTRAST,
     RPICAM_SATURATION,
     RPICAM_DENOISE,
+    RPICAM_EXPOSURE,
+    RPICAM_AWB,
+    RPICAM_SHUTTER_US,
     HLS_PLAYLIST,
     HLS_SEGMENT_PATTERN,
     LOG_FFMPEG_HLS,
@@ -44,13 +47,13 @@ class StreamPipeline:
         intra = fps
 
         return (
-            "rpicam-vid -t 0 "
+            "rpicam-vid -t 86400000 "
             "--codec h264 "
             "--profile baseline "
             f"--intra {intra} "
             "--inline "
             f"--width {w} --height {h} --framerate {fps} "
-            "--exposure sport --awb auto "
+            "--exposure normal --awb auto "
             f"--gain {RPICAM_GAIN} "
             f"--brightness {RPICAM_BRIGHTNESS} "
             f"--sharpness {RPICAM_SHARPNESS} "
@@ -87,7 +90,7 @@ class StreamPipeline:
                 "hls_flags=delete_segments+independent_segments+omit_endlist:"
                 f"hls_segment_filename={HLS_SEGMENT_PATTERN}]"
                 f"{HLS_PLAYLIST}|"
-                "[f=rtsp:rtsp_transport=tcp:rtsp_flags=listen]"
+                "[f=rtsp:rtsp_transport=tcp]"
                 "rtsp://127.0.0.1:8554/motion"
             ),
         ]

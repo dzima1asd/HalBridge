@@ -8,9 +8,10 @@ import json
 import signal
 import threading
 import subprocess
+import logging
+from logging.handlers import RotatingFileHandler
 import queue
 from datetime import datetime
-from dataclasses import dataclass
 from typing import Optional
 from camera.engine_state import EngineState, EngineMode
 import paho.mqtt.client as mqtt
@@ -37,7 +38,7 @@ def ensure_dirs():
 def clear_hls():
     try:
         for fn in os.listdir(STREAM_DIR):
-            if fn.endswith(".ts") or fn.startswith("stream.m3u8"):
+            if fn.endswith(".ts") or fn == "stream.m3u8":
                 try:
                     os.remove(os.path.join(STREAM_DIR, fn))
                 except Exception:
@@ -86,12 +87,37 @@ def kill_remote_rpicam():
         "sleep 0.3; "
         "pkill -KILL -f rpicam-vid 2>/dev/null || true"
     )
-    subprocess.run(["ssh", *SSH_OPTS, PI_HOST, cmd], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.run(["ssh","-o","BatchMode=yes","-o","ConnectTimeout=3","-o","ServerAliveInterval=2","-o","ServerAliveCountMax=1",*SSH_OPTS,PI_HOST,cmd], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=6)
 
-@dataclass
 class StreamEngine:
     def __init__(self):
         self.state = EngineState()
+
+        # ===== motion rotating file logger =====
+        log_dir = LOG_DIR
+        os.makedirs(log_dir, exist_ok=True)
+
+        self.motion_logger = logging.getLogger("motion_logger")
+        self.motion_logger.setLevel(logging.INFO)
+
+        if not self.motion_logger.handlers:
+            handler = RotatingFileHandler(
+                os.path.join(log_dir, "motion.log"),
+                maxBytes=5 * 1024 * 1024,
+                backupCount=5
+            )
+            formatter = logging.Formatter("%(asctime)s %(message)s")
+            handler.setFormatter(formatter)
+            self.motion_logger.addHandler(handler)
+
+
+        # defaults (can be overridden by persisted state)
+        self.profile = ""
+        self.resolution = "1280x720"
+        self.fps = 30
+
+        self._load_state()
+
         self.lock = threading.RLock()
 
         self.proc_pi: Optional[subprocess.Popen] = None
@@ -138,10 +164,95 @@ class StreamEngine:
         )
     # ------------------- LOG -------------------
 
+
+    # ====== STATE PERSISTENCE (class methods) ======
+
+    def _load_state(self):
+        try:
+            from pathlib import Path
+            import json
+            from camera.config import STATE_FILE
+
+            path = Path(STATE_FILE)
+            if not path.exists():
+                return
+
+            data = json.loads(path.read_text(errors="ignore") or "{}")
+
+            self.profile = data.get("profile", getattr(self, "profile", ""))
+            self.resolution = data.get("resolution", getattr(self, "resolution", "1280x720"))
+            self.fps = int(data.get("fps", getattr(self, "fps", 30)))
+
+            feats = (data.get("features", {}) or {})
+
+            # ONE SOURCE OF TRUTH: engine flags
+            self.state.motion_enabled = bool(feats.get("motion_detection", getattr(self.state, "motion_enabled", True)))
+            self.state.motion_record_enabled = bool(feats.get("auto_record", getattr(self.state, "motion_record_enabled", True)))
+            self.state.motion_photo_enabled = bool(feats.get("motion_photo", getattr(self.state, "motion_photo_enabled", False)))
+
+            # zsynchronizuj motion worker
+            try:
+                self.motion.set_actions(self.state.motion_photo_enabled, self.state.motion_record_enabled)
+            except Exception:
+                pass
+
+            self.log("state: loaded")
+        except Exception as e:
+            try:
+                self.log(f"state: load error {e}")
+            except Exception:
+                pass
+
+    def _save_state(self):
+        try:
+            from pathlib import Path
+            import json
+            from camera.config import STATE_FILE
+
+            path = Path(STATE_FILE)
+            path.parent.mkdir(parents=True, exist_ok=True)
+
+            data = {
+                "profile": getattr(self, "profile", ""),
+                "resolution": getattr(self, "resolution", "1280x720"),
+                "fps": int(getattr(self, "fps", 30)),
+                "features": {
+                    "motion_detection": bool(getattr(self.state, "motion_enabled", True)),
+                    "auto_record": bool(getattr(self.state, "motion_record_enabled", True)),
+                    "motion_photo": bool(getattr(self.state, "motion_photo_enabled", False)),
+                },
+            }
+
+            path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n")
+        except Exception as e:
+            try:
+                self.log(f"state: save error {e}")
+            except Exception:
+                pass
+
+
+
+    
     def log(self, msg: str):
-        line = f"[{ts()}] {msg}"
-        print(line, flush=True)
-        self.mqtt_publish(T_LOG, line)
+        # zawsze zdefiniuj line, bo Python nie lubi telepatii
+        try:
+            line = f"[{ts()}] {msg}"
+        except Exception:
+            line = str(msg)
+
+        # do terminala
+        try:
+            print(line, flush=True)
+        except Exception:
+            pass
+
+        # do logu ogólnego
+        try:
+            os.makedirs(LOG_DIR, exist_ok=True)
+            with open(os.path.join(LOG_DIR, "engine.log"), "a", encoding="utf-8") as f:
+                f.write(line + "\n")
+        except Exception:
+            pass
 
     def set_event(self, ev: str, err: str = ""):
         with self.lock:
@@ -306,9 +417,13 @@ class StreamEngine:
             self.publish_status(force=True)
             return False
 
-        # start MotionService worker (JEDEN RAZ)
-        if self.state.motion_enabled and not self.motion.is_running():
-            self.motion.start()
+        # start MotionService worker (JEDEN RAZ) + SYNC FLAGS
+        if self.state.motion_enabled:
+            if not self.motion.is_running():
+                self.motion.start()
+
+        # 🔧 KLUCZOWE: synchronizacja akcji motion po starcie
+            self.motion.set_actions(self.state.motion_photo_enabled, self.state.motion_record_enabled)
 
         # 3️⃣ mark running
         with self.lock:
@@ -336,21 +451,20 @@ class StreamEngine:
 
         # allow stop from any mode incl. ERROR
         self.state.set_mode(EngineMode.STOPPING, event="stream_stopping")
-        self.cleanup("stream_off", "")
-        with self.lock:
-            if self.state.mode == EngineMode.ERROR:
-                self.state.restart_count += 1
-                self.state.set_mode(EngineMode.IDLE, event="recovered_from_error")
+        self.cleanup("stream_off", "", crash=False)
+        self.state.set_mode(EngineMode.IDLE, event="stream_off")
         self.publish_status(force=True)
         self.publish_event("stream_stopped", {})
         return True
 
-    def cleanup(self, reason: str, err: str):
+    def cleanup(self, reason: str, err: str, crash: bool = True):
         with self.lock:
             self.set_event(reason, err)
-            self.state.crash_count += 1
-            self.state.last_crash_at = time.time()
-            self.state.set_mode(EngineMode.ERROR, event=reason, error=err)
+            if crash:
+                self.state.crash_count += 1
+                self.state.last_crash_at = time.time()
+                self.state.set_mode(EngineMode.ERROR, event=reason, error=err)
+            # always clear recording flags
             self.state.recording_active = False
             self.state.manual_recording = False
 
@@ -373,7 +487,7 @@ class StreamEngine:
 
     def shutdown(self, reason="shutdown"):
         self.stop_event.set()
-        self.cleanup(reason, "")
+        self.cleanup(reason, "", crash=False)
 
     def _stop_proc(self, attr: str):
         p = getattr(self, attr, None)
@@ -469,9 +583,13 @@ class StreamEngine:
                 self.state.motion_photo_enabled = bool(photo)
             if record is not None:
                 self.state.motion_record_enabled = bool(record)
-            self.set_event("motion_actions", "")
-        self.publish_status(force=True)
 
+        # 🔴 KLUCZOWA LINIA – synchronizacja z MotionService
+        self.motion.set_actions(self.state.motion_photo_enabled, self.state.motion_record_enabled)
+
+        self.set_event("motion_actions", "")
+
+        self.publish_status(force=True)
 
 # ------------------- CLI (reader) -------------------
 
@@ -509,14 +627,12 @@ class StreamEngine:
         with self.lock:
             do_photo = self.state.motion_photo_enabled
             do_record = self.state.motion_record_enabled
-
-            self.log(
-                f"motion: actions photo={do_photo} record={do_record}"
-            )
-
             self.set_event("motion_detected", details)
-            self.publish_status(force=True)
-            self.publish_event("motion_detected", {"details": details})
+
+        self.log(f"motion: actions photo={do_photo} record={do_record}")
+
+        self.publish_status(force=True)
+        self.publish_event("motion_detected", {"details": details})
 
         if do_photo:
             threading.Thread(
@@ -525,32 +641,66 @@ class StreamEngine:
             ).start()
 
         if do_record:
+            # motion-based recording: nagrywaj dopóki jest ruch, stop po ciszy, rotate max 15 min
+            self._last_motion_seen_ts = time.time()
+
             with self.lock:
                 if self.state.recording_active:
-                    self.log("motion: recording already active, skipping motion record")
+                    self.log("motion: recording already active, extending")
                     return
                 self.state.recording_active = True
+                self.state.manual_recording = False
 
             def _rec():
                 try:
-                    path = self.recorder.start_recording(
-                        seconds=MOTION_RECORD_SECONDS
-                    )
+                    from camera.config import AUTO_RECORD_MAX_SEC, AUTO_RECORD_IDLE_SEC
+
+                    path = self.recorder.start_recording(seconds=None)
                     if path:
-                        self.log(f"motion: recording saved {path}")
+                        self.log(f"motion: recording started {path}")
                         with self.lock:
                             self.state.recordings_count += 1
+
+                    start_ts = time.time()
+
+                    while not self.stop_event.is_set():
+                        with self.lock:
+                            auto_enabled = self.state.motion_record_enabled
+                            running = self.state.is_running()
+
+                        if (not auto_enabled) or (not running):
+                            break
+
+                        last = getattr(self, "_last_motion_seen_ts", 0.0)
+                        if time.time() - last >= AUTO_RECORD_IDLE_SEC:
+                            break
+
+                        if time.time() - start_ts >= AUTO_RECORD_MAX_SEC:
+                            self.log("record: rotate (max length)")
+                            self.recorder.stop_recording()
+                            path = self.recorder.start_recording(seconds=None)
+                            if path:
+                                self.log(f"motion: recording continued {path}")
+                                with self.lock:
+                                    self.state.recordings_count += 1
+                            start_ts = time.time()
+
+                        time.sleep(0.5)
+
+                    self.recorder.stop_recording()
+                    self.log("record: finished (auto, motion ended)")
+
+                except Exception as e:
+                    self.log(f"motion: recording error: {e!r}")
                 finally:
                     with self.lock:
                         self.state.recording_active = False
+                        self.state.manual_recording = False
                     self.publish_status(force=True)
 
-            threading.Thread(
-                target=_rec,
-                daemon=True
-            ).start()
+            threading.Thread(target=_rec, daemon=True).start()
 
-    # ------------------- TAILSCALE -------------------
+# ------------------- TAILSCALE -------------------
 
     def tailscale_on(self) -> bool:
         self.log("tailscale: enabling")
@@ -600,7 +750,7 @@ class StreamEngine:
             uptime = int(time.time() - self.state.started_at)
             features = {
                 "motion_detection": self.state.motion_enabled,
-                "manual_record": bool(self.state.recording_active),
+                "manual_record": bool(self.state.manual_recording),
                 "auto_record": self.state.motion_record_enabled,
                 "motion_photo": self.state.motion_photo_enabled,
             }
@@ -677,7 +827,6 @@ class StreamEngine:
     def _handle_cmd(self, cmdline: str, source: str = "mqtt"):
         raw = (cmdline or "").strip()
         cmd = raw.lower()
-
         if not self._is_cmd_allowed(cmd):
             self.log(f"cmd rejected by mode={self.state.mode.name}: {cmd}")
             self.ack(cmd, False, f"rejected in mode {self.state.mode.name}")
@@ -723,56 +872,287 @@ class StreamEngine:
             return
 
         if cmd in ("rec_on", "record_on"):
+            with self.lock:
+                if self.state.recording_active:
+                    self.ack("rec_on", False, "recording already active")
+                    return
+                self.state.recording_active = True
+                self.state.manual_recording = True
             path = self.recorder.start_recording()
             ok = path is not None
             if ok:
                 with self.lock:
-                    self.state.recording_active = True
                     self.state.recordings_count += 1
+            else:
+                with self.lock:
+                    self.state.recording_active = False
+                    self.state.manual_recording = False
             self.ack("rec_on", ok, path or "failed")
             return
 
         if cmd in ("rec_off", "record_off"):
             ok = self.recorder.stop_recording()
+            still = self.recorder.is_recording()
             with self.lock:
-                self.state.recording_active = False
+                self.state.manual_recording = False
+                self.state.recording_active = bool(still)
             self.ack("rec_off", ok, "stopped")
             return
 
         if cmd == "motion_on":
-            self.log("CMD motion_on received")
+
             self.set_motion(True)
+
+            try:
+
+                self.state.motion_enabled = True
+
+            except Exception:
+
+                pass
+
+            try:
+
+                self._save_state()
+
+            except Exception:
+
+                pass
+
             self.ack("motion_on", True, "on")
+
+            try:
+                self.state.motion_enabled = True
+                self.motion.set_actions(self.state.motion_photo_enabled, self.state.motion_record_enabled)
+            except Exception:
+                pass
+            try:
+                self._save_state()
+            except Exception:
+                pass
+            if source == "cli":
+
+                print("OK: motion_detection ON", flush=True)
+
             return
 
         if cmd == "motion_off":
+
             self.set_motion(False)
+
+            try:
+
+                self.state.motion_enabled = False
+
+            except Exception:
+
+                pass
+
+            try:
+
+                self._save_state()
+
+            except Exception:
+
+                pass
+
             self.ack("motion_off", True, "off")
+
+            try:
+                self.state.motion_enabled = False
+                self.motion.set_actions(self.state.motion_photo_enabled, self.state.motion_record_enabled)
+            except Exception:
+                pass
+            try:
+                self._save_state()
+            except Exception:
+                pass
+            if source == "cli":
+
+                print("OK: motion_detection OFF", flush=True)
+
             return
 
         if cmd in ("mphoto_on", "motion_photo_on"):
+
             self.set_motion_actions(photo=True)
+
+            try:
+
+                self.state.motion_photo_enabled = True
+
+                self.motion.set_actions(self.state.motion_photo_enabled, self.state.motion_record_enabled)
+
+            except Exception:
+
+                pass
+
+            try:
+
+                self._save_state()
+
+            except Exception:
+
+                pass
+
             self.ack("mphoto_on", True, "on")
+
+            try:
+                self.state.motion_photo_enabled = True
+                self.motion.set_actions(self.state.motion_photo_enabled, self.state.motion_record_enabled)
+            except Exception:
+                pass
+            try:
+                self._save_state()
+            except Exception:
+                pass
+            if source == "cli":
+
+                print("OK: motion_photo ON", flush=True)
+
             return
 
         if cmd in ("mphoto_off", "motion_photo_off"):
+
             self.set_motion_actions(photo=False)
+
+            try:
+
+                self.state.motion_photo_enabled = False
+
+                self.motion.set_actions(self.state.motion_photo_enabled, self.state.motion_record_enabled)
+
+            except Exception:
+
+                pass
+
+            try:
+
+                self._save_state()
+
+            except Exception:
+
+                pass
+
             self.ack("mphoto_off", True, "off")
+
+            try:
+                self.state.motion_photo_enabled = False
+                self.motion.set_actions(self.state.motion_photo_enabled, self.state.motion_record_enabled)
+            except Exception:
+                pass
+            try:
+                self._save_state()
+            except Exception:
+                pass
+            if source == "cli":
+
+                print("OK: motion_photo OFF", flush=True)
+
             return
 
         if cmd in ("mrec_on", "rec_motion_on"):
+
             self.set_motion_actions(record=True)
+
+            try:
+
+                self.state.motion_record_enabled = True
+
+                self.motion.set_actions(self.state.motion_photo_enabled, self.state.motion_record_enabled)
+
+            except Exception:
+
+                pass
+
+            try:
+
+                self._save_state()
+
+            except Exception:
+
+                pass
+
             self.ack("mrec_on", True, "on")
+
+            try:
+                self.state.motion_record_enabled = True
+                self.motion.set_actions(self.state.motion_photo_enabled, self.state.motion_record_enabled)
+            except Exception:
+                pass
+            try:
+                self._save_state()
+            except Exception:
+                pass
+            if source == "cli":
+
+                print("OK: auto_record ON", flush=True)
+
             return
 
         if cmd in ("mrec_off", "rec_motion_off"):
+
             self.set_motion_actions(record=False)
+
+            try:
+
+                self.state.motion_record_enabled = False
+
+                self.motion.set_actions(self.state.motion_photo_enabled, self.state.motion_record_enabled)
+
+            except Exception:
+
+                pass
+
+            try:
+
+                self._save_state()
+
+            except Exception:
+
+                pass
+
             self.ack("mrec_off", True, "off")
+
+            try:
+                self.state.motion_record_enabled = False
+                self.motion.set_actions(self.state.motion_photo_enabled, self.state.motion_record_enabled)
+            except Exception:
+                pass
+            try:
+                self._save_state()
+            except Exception:
+                pass
+            if source == "cli":
+
+                print("OK: auto_record OFF", flush=True)
+
             return
 
         if cmd in ("low", "med", "high"):
             ok = self.set_profile(cmd)
             self.ack(cmd, ok, "ok" if ok else "failed")
+            return
+
+
+            try:
+
+                self._save_state()
+
+            except Exception:
+
+                pass
+
+            if source == "cli":
+
+                try:
+
+                    print("OK: profile changed", flush=True)
+
+                except Exception:
+
+                    pass
+
             return
 
         if cmd.startswith("profile "):
@@ -782,6 +1162,27 @@ class StreamEngine:
                 self.ack("profile", ok, parts[1])
             else:
                 self.ack("profile", False, "usage: profile low|med|high")
+            return
+
+
+            try:
+
+                self._save_state()
+
+            except Exception:
+
+                pass
+
+            if source == "cli":
+
+                try:
+
+                    print("OK: profile set", flush=True)
+
+                except Exception:
+
+                    pass
+
             return
 
         if cmd == "tailscale_on":
@@ -874,19 +1275,38 @@ def _handle_signal(sig, _frame):
     ENGINE.log(f"signal: {sig} -> shutdown")
     ENGINE.shutdown("signal")
     try:
+        ENGINE._save_state()
+    except Exception:
+        pass
+    try:
         ENGINE.mqtt_stop()
     except Exception:
         pass
     sys.exit(0)
 
 
+def _is_foreground():
+    import sys
+    try:
+        stdin_ok = bool(getattr(sys.stdin, 'isatty', lambda: False)())
+        stdout_ok = bool(getattr(sys.stdout, 'isatty', lambda: False)())
+        return stdin_ok and stdout_ok
+    except Exception:
+        return False
+
+
 def main():
+    import signal, sys
+    if not _is_foreground():
+        signal.signal(signal.SIGTTOU, signal.SIG_IGN)
+        signal.signal(signal.SIGTTIN, signal.SIG_IGN)
+        signal.signal(signal.SIGTSTP, signal.SIG_IGN)
     ensure_dirs()
 
     signal.signal(signal.SIGINT, _handle_signal)
     signal.signal(signal.SIGTERM, _handle_signal)
 
-    ENGINE.log("stream_engine_v4: start")
+    ENGINE.log("stream_engine_v5: start")
     ENGINE.log("Commands (CLI): start | stop | photo | rec_on | rec_off | motion_on | motion_off | mphoto_on/off | mrec_on/off | status | diag | profile low|med|high | low|med|high | tailscale_on | tailscale_off | tailscale_status | quit")
     ENGINE.log(f"MQTT: sub {T_CMD} (UI -> engine), pub {T_STATUS},{T_ACK},{T_LOG},{T_DIAG},{T_HEALTH},{T_EVENT}")
 
@@ -895,10 +1315,22 @@ def main():
 
     ENGINE.cmd_worker_thread = threading.Thread(target=ENGINE._cmd_worker, daemon=True)
     ENGINE.cmd_worker_thread.start()
+    # CLI: TTY = interaktywnie, PIPE = heredoc (też ma działać)
+    try:
+        stdin_ok = (hasattr(sys, "stdin") and sys.stdin and (not getattr(sys.stdin, "closed", True)))
+    except Exception:
+        stdin_ok = False
 
-    cli_thread = threading.Thread(target=ENGINE._cli_reader, daemon=True)
-    cli_thread.start()
-
+    if stdin_ok:
+        cli_thread = threading.Thread(
+            target=ENGINE._cli_reader,
+            daemon=True
+        )
+        cli_thread.start()
+        if not _is_foreground():
+            ENGINE.log("CLI: stdin pipe mode")
+    else:
+        ENGINE.log("CLI disabled (stdin closed)")
     while not ENGINE.stop_event.is_set():
         try:
             cmdline = ENGINE.cli_queue.get(timeout=0.5)
@@ -911,10 +1343,16 @@ def main():
 
         if cmd in ("q", "quit", "exit"):
             ENGINE.shutdown("quit")
+            try:
+                ENGINE._save_state()
+            except Exception:
+                pass
             ENGINE.mqtt_stop()
             break
 
         ENGINE.cmd_queue.put((cmdline,"cli"))
+
+
 
 if __name__ == "__main__":
     main()

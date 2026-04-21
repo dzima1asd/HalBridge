@@ -41,14 +41,19 @@ class HLSHttpServer:
                     os.makedirs(self.directory, exist_ok=True)
 
                     handler_cls = self._make_handler(self.directory)
+                    ThreadingHTTPServer.allow_reuse_address = True
                     self.httpd = ThreadingHTTPServer((self.bind, self.port), handler_cls)
 
                     self.running.set()
                     self.ready.set()
 
                     self.httpd.serve_forever()
-                except Exception:
+                except Exception as e:
                     self.ready.set()
+                    try:
+                        print(f"[http] start failed: {e!r}", flush=True)
+                    except Exception:
+                        pass
                 finally:
                     self.running.clear()
                     try:
@@ -80,4 +85,11 @@ class HLSHttpServer:
         class _Handler(QuietHandler):
             def __init__(self, *args, **kwargs):
                 super().__init__(*args, directory=directory, **kwargs)
+
+            def copyfile(self, source, outputfile):
+                try:
+                    return super().copyfile(source, outputfile)
+                except (BrokenPipeError, ConnectionResetError):
+                    return
+
         return _Handler

@@ -1,22 +1,52 @@
 import importlib
 
+
 class ToolRegistry:
     def __init__(self):
-        self.tools = {}
+        self._module_paths = {}
+        self._tools = {}
+        self._errors = {}
 
     def register(self, name: str, module_path: str):
-        mod = importlib.import_module(module_path)
-        self.tools[name] = mod
+        self._module_paths[name] = module_path
+
+    def _load(self, name: str):
+        if name in self._tools:
+            return self._tools[name]
+
+        module_path = self._module_paths.get(name)
+        if not module_path:
+            return None
+
+        try:
+            mod = importlib.import_module(module_path)
+            self._tools[name] = mod
+            self._errors.pop(name, None)
+            return mod
+        except Exception as e:
+            self._errors[name] = f"{type(e).__name__}: {e}"
+            return None
 
     def get(self, name: str):
-        return self.tools.get(name)
+        return self._load(name)
+
+    def get_error(self, name: str):
+        return self._errors.get(name)
+
+    def registered_names(self):
+        return sorted(self._module_paths.keys())
 
     def invoke(self, name: str, payload: dict):
         tool = self.get(name)
         if not tool:
+            err = self.get_error(name)
+            if err:
+                return {"ok": False, "error": f"tool_import_failed: {name}", "details": err}
             return {"ok": False, "error": f"tool_not_found: {name}"}
+
         if not hasattr(tool, "invoke"):
             return {"ok": False, "error": f"no_invoke_in_tool: {name}"}
+
         return tool.invoke(payload)
 
 

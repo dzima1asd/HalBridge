@@ -40,8 +40,8 @@ STATE_PATH = STATE_DIR / "hw_context.json"
 # ==========================================
 
 _SHELLY_LIGHT_MAP_RAW = {
-    "światło 1": {"ip": "192.168.100.12", "id": 0},
-    "światło 2": {"ip": "192.168.100.12", "id": 1},
+    "światło 1": {"ip": "192.168.100.13", "id": 0},
+    "światło 2": {"ip": "192.168.100.13", "id": 1},
 }
 # klucze znormalizowane tak jak _slug()
 # (żeby "światlo 1" z device_commands.json pasowało)
@@ -226,8 +226,12 @@ class HardwareBridge:
             # Światła
             "pierwsze światło": "światło 1",
             "światło numer jeden": "światło 1",
+            "światło jeden": "światło 1",
+            "lampa jeden": "światło 1",
             "drugie światło": "światło 2",
             "światło numer dwa": "światło 2",
+            "światło dwa": "światło 2",
+            "lampa dwa": "światło 2",
             "pierwsza lampa": "światło 1",
             "druga lampa": "światło 2",
             # Diodki / LED
@@ -417,7 +421,7 @@ class HardwareBridge:
             return None
 
         # jeśli jest numer → nie ruszamy
-        if re.search(r"\b1\b|\b2\b", raw):
+        if re.search(r"\b1\b|\b2\b|\bjeden\b|\bdwa\b", raw):
             return None
 
         # stan (z pamięci, ew. uzupełniony live)
@@ -461,11 +465,40 @@ class HardwareBridge:
     # WYKONANIE
     # ---------------------------------------------------
 
-    def _run(self, cmd: str) -> None:
+    def _run(self, cmd) -> bool:
         try:
-            subprocess.run(cmd, shell=True, check=False, timeout=10)
+            if isinstance(cmd, dict):
+                if cmd.get("type") == "mqtt":
+                    topic = cmd.get("topic")
+                    payload = cmd.get("payload")
+                    if not topic:
+                        print("❌ Brak topic MQTT.")
+                        return False
+
+                    res = subprocess.run(
+                        [
+                            "mosquitto_pub",
+                            "-h", "192.168.100.12",
+                            "-t", str(topic),
+                            "-m", str(payload if payload is not None else ""),
+                        ],
+                        check=False,
+                        timeout=10,
+                    )
+                    return res.returncode == 0
+
+                print(f"❌ Nieobsługiwany typ komendy: {cmd.get('type')}")
+                return False
+
+            if isinstance(cmd, str):
+                res = subprocess.run(cmd, shell=True, check=False, timeout=10)
+                return res.returncode == 0
+
+            print(f"❌ Nieobsługiwany format komendy: {type(cmd).__name__}")
+            return False
         except Exception as e:
             print(f"❌ Błąd wykonania komendy: {e}")
+            return False
 
     def _exec_for(self, action: str, targets: List[str]) -> Tuple[List[str], List[str]]:
         ok: List[str] = []
@@ -480,7 +513,11 @@ class HardwareBridge:
                 continue
 
             print(f"➡️ {action.upper()} → {dev}")
-            self._run(cmd)
+            success = self._run(cmd)
+            if not success:
+                missing.append(dev)
+                continue
+
             ok.append(dev)
 
             if action == "włącz":

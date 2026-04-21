@@ -1,3 +1,4 @@
+from pathlib import Path
 # camera/config.py
 # Centralna konfiguracja systemu kamery
 # ETAP 1 – bez zmiany logiki
@@ -112,15 +113,39 @@ PHOTO_QUALITY = 95
 # ========================= DETEKCJA RUCHU =========================
 
 MOTION_ENABLED_DEFAULT = True
-MOTION_SCENE_THRESHOLD = 0.05
+MOTION_SCENE_THRESHOLD = 0.90
 MOTION_POLL_RETRY_SEC = 2
-MOTION_COOLDOWN_SEC = 6
+MOTION_COOLDOWN_SEC = 1
 
 MOTION_PHOTO_ENABLED_DEFAULT = True
-MOTION_RECORD_ENABLED_DEFAULT = False
+MOTION_RECORD_ENABLED_DEFAULT = True
 MOTION_RECORD_SECONDS = 12
 
 
 # ========================= WATCHDOG =========================
 
 WATCHDOG_INTERVAL_SEC = 1.0
+
+
+# Auto-record (motion): nagrywaj dopóki jest ruch, ale tnij na kawałki
+AUTO_RECORD_MAX_SEC = 15 * 60   # max długość jednego pliku (15 min)
+AUTO_RECORD_IDLE_SEC = 20
+
+# ===== Camera tuning (keep motion timings/sensitivity unchanged) =====
+# Video (indoor, artificial light): start values
+RPICAM_EXPOSURE = "normal"
+RPICAM_AWB = "auto"
+RPICAM_SHUTTER_US = 10000   # 10ms (dobry start pod 50Hz LED, mniej migotania)
+
+# Photo (sport): start values
+PHOTO_EXPOSURE = "sport"
+PHOTO_AWB = "auto"
+PHOTO_SHUTTER_US = 5000     # 5ms (szybciej, mniej rozmycia)
+
+
+# Persisted engine state
+STATE_FILE = str((Path.home()/"HALbridge/media/state/stream_engine_state.json").resolve())
+
+
+# scp doesn't accept -n / -T, keep only compatible opts
+SCP_OPTS = [x for x in SSH_OPTS if x not in ('-n','-T')]

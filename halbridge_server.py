@@ -1,3 +1,27 @@
+# LEGACY SERVER / DO NOT EXTEND
+# ------------------------------------------------------------
+# Ten plik reprezentuje starszą wersję serwera HALbridge
+# powiązaną historycznie z architekturą v2.
+#
+# Status:
+# - plik legacy
+# - nie rozwijać dalej w tej formie
+# - nie traktować jako docelowej bazy pod aktualny system
+#
+# Aktualny kierunek projektu:
+# - agent: gpt_chat_v4.py
+# - hardware bridge: modules/hardware_bridge.py
+# - web fetch: modules/tools/web_fetch.py + hal_webfetch.py
+#
+# Plan:
+# - utworzyć nowy, odchudzony serwer API pod v3
+# - bez self-modify
+# - bez zależności od gpt_chat_v2
+# - bez niejawnego fallbacku do shell execution
+#
+# Ten plik zachować tylko jako materiał porównawczy przy
+# budowie nowego serwera.
+# ------------------------------------------------------------
 # v2
 import os
 import subprocess

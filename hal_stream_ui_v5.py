@@ -48,8 +48,9 @@ state = {
 
     # Features (stary styl nazw)
     "motion": False,
-    "record_manual": False,
+    "motion_photo": False,
     "record_on_motion": False,
+    "record_manual": False,
     "recording_active": False,
 
     # Stats
@@ -60,6 +61,7 @@ state = {
 
     # Nowe rzeczy z silnika v4
     "profile": "high",
+    "profile_ui": "high",
     "resolution": "",
     "fps": 0,
 
@@ -179,8 +181,8 @@ def on_message(c, userdata, msg):
                 if isinstance(features, dict):
                     state["record_manual"] = bool(features.get("manual_record", state["record_manual"]))
                     state["motion"] = bool(features.get("motion_detection", state["motion"]))
+                    state["motion_photo"] = bool(features.get("motion_photo", state.get("motion_photo", False)))
                     state["record_on_motion"] = bool(features.get("auto_record", state["record_on_motion"]))
-                    state["recording_active"] = bool(s.get("recording_active", state["recording_active"]))
 
                 # stats (źródłem prawdy jest T_STATUS z silnika)
                 stats = s.get("stats", {})
@@ -244,11 +246,13 @@ def on_message(c, userdata, msg):
                 event_type = data.get("type", "")
                 details = data.get("details", {}) if isinstance(data.get("details", {}), dict) else {}
 
-                # Eventy NIE zmieniają stanu logicznego.
                 # Służą wyłącznie do komunikatów UI.
                 if event_type == "photo_captured":
                     state["last_event"] = "📸 Photo saved"
                     state["last_photo_ts"] = time.time()
+
+                elif event_type == "motion_detected":
+                    state["last_event"] = "👁 Motion detected"
 
                 elif event_type == "recording_started":
                     state["last_event"] = "🎬 Recording started"
@@ -364,7 +368,7 @@ def safe_addstr(stdscr, y, x, text, color=0):
 def lamp(v, c_on, c_off):
     # zachowujemy styl: 🔴 aktywny, ⚪ nieaktywny
     if v:
-        return ("🔴", c_on)
+        return ("🟢", c_on)
     return ("⚪", c_off)
 
 def draw_control_row(stdscr, y, lamp_char, lamp_color, icon, key, name, value, c_info, c_val):
@@ -406,8 +410,9 @@ def build_diagnostics_text():
     return diag_lines
 
 # ================= DRAW =================
+
 def draw(stdscr):
-    stdscr.clear()
+    stdscr.erase()
     curses.start_color()
 
     curses.init_pair(1, curses.COLOR_GREEN, curses.COLOR_BLACK)
@@ -420,7 +425,7 @@ def draw(stdscr):
     C_OFF  = curses.color_pair(2)
     C_INFO = curses.color_pair(3)
     C_MENU = curses.color_pair(4)
-    C_WARN = curses.color_pair(5)
+    C_WARN = curses.color_pair(1)
 
     with lock:
         y = 1
@@ -433,53 +438,57 @@ def draw(stdscr):
         safe_addstr(stdscr, y, 0, "STEROWANIE - TRYB PRACY", C_MENU)
         y += 1
 
-        l, lc = lamp(state["stream"], C_WARN, C_OFF)
+        l, lc = lamp(state["stream"] and state["http_ok"], C_WARN, C_OFF)
         status = "[ON ]" if state["stream"] else "[OFF]"
         draw_control_row(stdscr, y, l, lc, "🎥", "1", "Stream", status, C_MENU, lc)
+        y += 1
+        l, lc = lamp(state["motion"], C_WARN, C_OFF)
+        status = "[ON ]" if state["motion"] else "[OFF]"
+        draw_control_row(stdscr, y, l, lc, "👁", "2", "Motion detect", status, C_MENU, lc)
         y += 1
 
         flash = (time.time() - state["last_photo_ts"]) < PHOTO_FLASH_SECONDS
         l, lc = lamp(flash, C_WARN, C_OFF)
         photo_status = "[FLASH]" if flash else "[    ]"
         draw_control_row(
-            stdscr, y, l, lc, "📸", "2", "Take photo",
-            photo_status, C_MENU, (C_WARN if flash else C_OFF)
+        stdscr, y, l, lc, "📸", "3", "Photo (manual)",
+        photo_status, C_MENU, (C_WARN if flash else C_OFF)
         )
         y += 1
 
-        l, lc = lamp(state["motion"], C_WARN, C_OFF)
-        status = "[ON ]" if state["motion"] else "[OFF]"
-        draw_control_row(stdscr, y, l, lc, "👁", "3", "Motion detect - photos (5)", status, C_MENU, lc)
+        l, lc = lamp(state["motion"] and state.get("motion_photo"), C_WARN, C_OFF)
+        status = "[ON ]" if state.get("motion_photo") else "[OFF]"
+        draw_control_row(stdscr, y, l, lc, "📸", "4", "Motion → photo", status, C_MENU, lc)
         y += 1
 
         l, lc = lamp(state["record_manual"], C_WARN, C_OFF)
         status = "[ON ]" if state["record_manual"] else "[OFF]"
-        draw_control_row(stdscr, y, l, lc, "🎬", "4", "Recording (manual)", status, C_MENU, lc)
+        draw_control_row(stdscr, y, l, lc, "🎬", "5", "Recording (manual)", status, C_MENU, lc)
         y += 1
 
-        l, lc = lamp(state["record_on_motion"], C_WARN, C_OFF)
+        l, lc = lamp(state["motion"] and state["record_on_motion"], C_WARN, C_OFF)
         status = "[ON ]" if state["record_on_motion"] else "[OFF]"
-        draw_control_row(stdscr, y, l, lc, "🧠", "5", "Motion detect - recording", status, C_MENU, lc)
+        draw_control_row(stdscr, y, l, lc, "🧠", "6", "Motion → recording", status, C_MENU, lc)
         y += 1
 
-        is_low = (state.get("profile") == "low")
+        is_low = (state.get("profile_ui") == "low")
         l, lc = lamp(is_low, C_WARN, C_OFF)
-        draw_control_row(stdscr, y, l, lc, "🎛", "6", "Profile low", "[SET]" if is_low else "[   ]", C_MENU, lc)
+        draw_control_row(stdscr, y, l, lc, "🎛", "7", "Profile low", "[SET]" if is_low else "[   ]", C_MENU, lc)
         y += 1
 
-        is_med = (state.get("profile") == "med")
+        is_med = (state.get("profile_ui") == "med")
         l, lc = lamp(is_med, C_WARN, C_OFF)
-        draw_control_row(stdscr, y, l, lc, "🎛", "7", "Profile med", "[SET]" if is_med else "[   ]", C_MENU, lc)
+        draw_control_row(stdscr, y, l, lc, "🎛", "8", "Profile med", "[SET]" if is_med else "[   ]", C_MENU, lc)
         y += 1
 
-        is_high = (state.get("profile") == "high")
+        is_high = (state.get("profile_ui") == "high")
         l, lc = lamp(is_high, C_WARN, C_OFF)
-        draw_control_row(stdscr, y, l, lc, "🎛", "8", "Profile high", "[SET]" if is_high else "[   ]", C_MENU, lc)
+        draw_control_row(stdscr, y, l, lc, "🎛", "9", "Profile high", "[SET]" if is_high else "[   ]", C_MENU, lc)
         y += 1
 
         ts_on = (state.get("network_mode") == "tailscale")
         l, lc = lamp(ts_on, C_WARN, C_OFF)
-        draw_control_row(stdscr, y, l, lc, "🌐", "9", "Tailscale", "[ON ]" if ts_on else "[OFF]", C_MENU, lc)
+        draw_control_row(stdscr, y, l, lc, "🌐", "0", "Tailscale", "[ON ]" if ts_on else "[OFF]", C_MENU, lc)
         y += 2
 
         safe_addstr(stdscr, y, 0, "[q] Quit (graceful)", C_MENU)
@@ -558,7 +567,7 @@ def draw(stdscr):
 # ================= UI LOOP =================
 def ui(stdscr):
     curses.curs_set(0)
-    stdscr.timeout(100)
+    stdscr.timeout(250)
 
     mqtt_start()
     time.sleep(0.2)
@@ -569,6 +578,7 @@ def ui(stdscr):
 
     last_poll = 0.0
     last_diag = 0.0
+    last_draw_state = None
 
     while True:
         now = time.time()
@@ -581,9 +591,34 @@ def ui(stdscr):
             _publish_cmd("diag")
             last_diag = now
 
-        draw(stdscr)
+        with lock:
+            current_draw_state = (
+                state["stream"],
+                state["motion"],
+                state["motion_photo"],
+                state["record_on_motion"],
+                state["record_manual"],
+                state["recording_active"],
+                state["last_event"],
+                state["last_ack"],
+                state["photos_taken"],
+                state["recordings_count"],
+                state["segments_generated"],
+                state["stream_uptime"],
+                state["profile"],
+                state["network_mode"],
+            )
+
+        if current_draw_state != last_draw_state:
+            draw(stdscr)
+            last_draw_state = current_draw_state
 
         k = stdscr.getch()
+
+        if k != -1 and not state.get("engine_running"):
+            state["last_event"] = "⛔ Engine not responding"
+            continue
+
         if k == -1:
             continue
 
@@ -603,10 +638,6 @@ def ui(stdscr):
             run_diagnostics()
 
         elif k == ord('2'):
-            _publish_cmd("photo")
-            run_diagnostics()
-
-        elif k == ord('3'):
             if state["motion"]:
                 _publish_cmd("motion_off")
                 state["last_event"] = "⏳ Motion detect OFF..."
@@ -615,7 +646,21 @@ def ui(stdscr):
                 state["last_event"] = "⏳ Motion detect ON..."
             run_diagnostics()
 
+        elif k == ord('3'):
+            _publish_cmd("photo")
+            state["last_event"] = "📸 Photo taken"
+            run_diagnostics()
+
         elif k == ord('4'):
+            if state.get("motion_photo"):
+                _publish_cmd("mphoto_off")
+                state["last_event"] = "⏳ Motion→photo OFF..."
+            else:
+                _publish_cmd("mphoto_on")
+                state["last_event"] = "⏳ Motion→photo ON..."
+            run_diagnostics()
+
+        elif k == ord('5'):
             if state["record_manual"]:
                 _publish_cmd("rec_off")
                 state["last_event"] = "⏳ Stopping recording..."
@@ -624,7 +669,7 @@ def ui(stdscr):
                 state["last_event"] = "⏳ Starting recording..."
             run_diagnostics()
 
-        elif k == ord('5'):
+        elif k == ord('6'):
             if state["record_on_motion"]:
                 _publish_cmd("mrec_off")
                 state["last_event"] = "⏳ Motion→record OFF..."
@@ -633,19 +678,22 @@ def ui(stdscr):
                 state["last_event"] = "⏳ Motion→record ON..."
             run_diagnostics()
 
-        elif k == ord('6'):
+        elif k == ord('7'):
+            state["profile_ui"] = "low"
             _publish_cmd("profile low")
             run_diagnostics()
 
-        elif k == ord('7'):
+        elif k == ord('8'):
+            state["profile_ui"] = "med"
             _publish_cmd("profile med")
             run_diagnostics()
 
-        elif k == ord('8'):
+        elif k == ord('9'):
+            state["profile_ui"] = "high"
             _publish_cmd("profile high")
             run_diagnostics()
 
-        elif k == ord('9'):
+        elif k == ord('0'):
             ts_on = (state.get("network_mode") == "tailscale")
             _publish_cmd("tailscale_off" if ts_on else "tailscale_on")
             run_diagnostics()

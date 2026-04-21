@@ -1,29 +1,38 @@
 import re
 
-INTENT_KEYWORDS = {
-    "iot.toggle": ["włącz", "wlacz", "wyłącz", "wylacz", "toggle"],
-    "iot.blink": ["mrugaj", "migaj", "blink"],
-    "data.analyze": ["analizuj", "analiza", "przeanalizuj"],
-    "browser.fetch": ["pobierz stronę", "pobierz strone", "fetch"],
-    "mail.search": ["znajdź w mailach", "szukaj maili", "mail"],
-    "system.exec": ["uruchom", "wykonaj", "system"],
+INTENT_PATTERNS = {
+    "iot.toggle": [
+        r"\b(włącz|wlacz|wyłącz|wylacz|toggle)\b",
+    ],
+    "iot.blink": [
+        r"\b(mrugaj|migaj|blink|mruganie)\b",
+    ],
+    "data.analyze": [
+        r"\b(analizuj|analiza|przeanalizuj)\b",
+    ],
+    "browser.fetch": [
+        r"\b(pobierz stronę|pobierz strone|fetch)\b",
+    ],
+    "mail.search": [
+        r"\b(znajdź w mailach|znajdz w mailach|szukaj maili|szukaj w mailach)\b",
+    ],
+    "system.exec": [
+        r"\b(wykonaj komendę|wykonaj komende|uruchom komendę|uruchom komende|system)\b",
+    ],
 }
 
 def recognize_intent(text: str):
-    text_l = text.lower()
+    text_l = (text or "").lower().strip()
 
-    # słownikowe dopasowanie
-    for intent, words in INTENT_KEYWORDS.items():
-        for w in words:
-            if w in text_l:
+    for intent, patterns in INTENT_PATTERNS.items():
+        for p in patterns:
+            if re.search(p, text_l):
                 return {"intent": intent, "confidence": 0.9}
 
-    # fallback regex
     if re.search(r"\b(włącz|wyłącz|wlacz|wylacz)\b", text_l):
         return {"intent": "iot.toggle", "confidence": 0.6}
 
-    if re.search(r"\bmrug(a|aj|anie)\b", text_l):
+    if re.search(r"\b(mrugaj|migaj|blink|mruganie)\b", text_l):
         return {"intent": "iot.blink", "confidence": 0.6}
 
-    # nic nie znaleziono
     return {"intent": None, "confidence": 0.0}

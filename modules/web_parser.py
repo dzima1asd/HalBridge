@@ -1,3 +1,18 @@
+# LEGACY / STANDALONE PARSER
+# ------------------------------------------------------------
+# Ten plik zawiera alternatywny parser HTML, ale nie jest
+# częścią oficjalnej ścieżki runtime web dla HALbridge.
+#
+# Aktualna ścieżka kanoniczna:
+# - modules/tools/web_fetch.py
+# - hal_webfetch.py
+# - modules/tools/browser_query.py
+#
+# Status:
+# - legacy / poboczny eksperyment
+# - nie rozwijać jako głównego parsera runtime
+# ------------------------------------------------------------
+
 from bs4 import BeautifulSoup
 import re
 

@@ -10,7 +10,9 @@ def ask_for_missing_slots(required, slots):
         "time": "Podaj czas.",
         "duration": "Jak długo ma to trwać?",
         "on_ms": "Ile milisekund ma świecić?",
-        "off_ms": "Ile milisekund ma gasnąć?"
+        "off_ms": "Ile milisekund ma gasnąć?",
+        "query": "Czego mam szukać?",
+        "command": "Jaką komendę mam uruchomić?",
     }
 
     return prompts.get(field, f"Brakuje parametru: {field}")

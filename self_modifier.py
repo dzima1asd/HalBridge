@@ -1,3 +1,23 @@
+# LEGACY / DISABLED
+# ------------------------------------------------------------
+# Ten moduł NIE jest częścią aktywnego runtime HALbridge.
+# Powstał dla starszej architektury opartej o gpt_chat_v2.py
+# i historyczny mechanizm samomodyfikacji kodu.
+#
+# Status:
+# - wyłączony z aktywnego rozwoju
+# - nie podłączać do nowego serwera
+# - nie używać jako mechanizmu refaktoryzacji ani auto-naprawy
+#
+# Powód wyłączenia:
+# - silne sprzężenie ze starą architekturą v2
+# - brak bezpiecznego pipeline'u walidacji zmian
+# - ryzyko niekontrolowanych modyfikacji kodu
+#
+# Jeśli idea wróci w przyszłości, powinna być zrealizowana
+# jako kontrolowany system generowania patchy/diffów z
+# walidacją, testami i ręcznym zatwierdzeniem operatora.
+# ------------------------------------------------------------
 import os
 import time
 import json

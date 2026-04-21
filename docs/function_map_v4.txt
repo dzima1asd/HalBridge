@@ -1,0 +1,857 @@
+HALBRIDGE FUNCTION MAP (V4 PREP)
+
+CEL NADRZEDNY:
+System ma stac sie funkcjonalny poprzez sterowanie glosowe
+z zachowaniem wszystkich funkcjonalnosci widocznych w help,
+CLI runtime, module runtime i istniejacych modulach, nawet jesli
+nie sa jeszcze podpiete do systemu naturalna komenda wewnetrzna.
+
+[STATUS]
+ACTIVE = dziala teraz
+CLI = dostepne z CLI
+MODULE = dostepne przez module run
+VOICE = podpiete pod voice
+PARTIAL = czesciowo dziala
+PLANNED = istnieje w repo ale nie podpiete
+LEGACY = warstwa przejsciowa lub stara
+UNKNOWN = niepewne
+
+--------------------------------------------------
+
+[CORE ENTRYPOINTS]
+--------------------------------------------------
+
+[VOICE]
+--------------------------------------------------
+
+[DEVICE CONTROL]
+--------------------------------------------------
+
+[YOUTUBE]
+--------------------------------------------------
+
+[LLM / AI]
+--------------------------------------------------
+
+[MEMORY]
+--------------------------------------------------
+
+[FILES / PROJECT / VCS / LOGS]
+--------------------------------------------------
+
+[NETWORK / WEB]
+--------------------------------------------------
+
+[MODULE SYSTEM]
+--------------------------------------------------
+
+[CAMERA / MEDIA]
+--------------------------------------------------
+
+[OTHER]
+--------------------------------------------------
+
+[CORE ENTRYPOINTS LIST]
+----------------------------------------
+gpt_chat_v3.py = glowny agent CLI
+voice_daemon.py = wykonanie/scalanie logiki voice
+modules/cli_entry.py = katalog komend i wejsc CLI
+modules/execution_router.py = wspolne wykonanie requestow
+modules/execution_classifier.py = klasyfikacja tras wykonania
+modules/agent_api.py = wywolania LLM i polityka promptu
+
+[CLI COMMANDS DETECTED]
+----------------------------------------
+
+[CLI RUNTIMES]
+----------------------------------------
+cli_about_runtime.py
+cli_browser_runtime.py
+cli_browser_yt_runtime.py
+cli_files_runtime.py
+cli_http_runtime.py
+cli_logs_runtime.py
+cli_memory_runtime.py
+cli_module_runtime.py
+cli_project_runtime.py
+cli_tokens_runtime.py
+cli_vcs_runtime.py
+
+[VOICE MODULES]
+----------------------------------------
+voice_dispatch.py
+voice_history.py
+voice_hotword.py
+voice_http_client.py
+voice_intent_assist.py
+voice_kernel_bridge.py
+voice_listener.py
+voice_logger.py
+voice_orchestrator.py
+voice_preprocess.py
+voice_response_adapter.py
+voice_router.py
+voice_runtime.py
+voice_runtime_state.py
+voice_session.py
+voice_state.py
+voice_stt.py
+voice_stt_hybrid.py
+voice_tts.py
+voice_vad.py
+voice_wake.py
+
+[EXECUTION MODULES]
+----------------------------------------
+execution_classifier.py
+execution_metadata_factory.py
+execution_models.py
+execution_request_factory.py
+execution_router.py
+
+[WEB MODULES]
+----------------------------------------
+browser_bridge.py
+browser_yt_autoskip_worker.py
+web_adapter.py
+web_parser.py
+web_research.py
+web_settings.py
+web_tool.py
+
+[MEMORY MODULES]
+----------------------------------------
+cli_memory_runtime.py
+
+[CAMERA MODULES]
+----------------------------------------
+cam_pi.py
+
+
+[CLI DISPATCH ORDER]
+----------------------------------------
+run_cli() kolejnosc obslugi:
+1. execute_cli_hardware(line)
+2. jesli from_voice_queue:
+   2a. handle_browser_yt_runtime(voice_local_line, browser)
+   2b. handle_browser_runtime(voice_local_line, browser, registry)
+   2c. fallback: handle_browser_yt_runtime("yt " + line, browser)
+   2d. jesli brak dopasowania: voice command pomijana
+3. handle_camera_command(line)
+4. handle_module_runtime(line, api)
+5. handle_project_runtime(line, api)
+6. handle_tokens_runtime(line, api)
+7. handle_about_runtime(line, cfg)
+8. handle_http_runtime(line, api)
+9. handle_files_runtime(line, api)
+10. handle_memory_runtime(line, api)
+11. handle_logs_runtime(line, api, cfg)
+12. handle_vcs_runtime(line, api)
+13. handle_audio_runtime(line)
+14. handle_core_dispatch(line, api)
+15. handle_basic_cli(line)
+16. handle_runtime_meta(line, api, cfg)
+17. handle_runtime_controls(line, cfg, api)
+18. handle_browser_yt_runtime(line, browser)
+19. handle_browser_runtime(line, browser, registry)
+20. shell explicit: line.startswith("!")
+21. handle_explicit_dispatch(line, api)
+22. execute_cli_fallback(line)
+
+Wniosek:
+cli_entry.py jest glownym routerem wejsc, ale nie glownym katalogiem komend.
+Komendy nalezy mapowac z handlerow runtime/dispatch, nie z samego cli_entry.py.
+
+
+[CLI HANDLERS TO ANALYZE]
+----------------------------------------
+modules/cli_basic_dispatch.py
+modules/cli_core_dispatch.py
+modules/cli_explicit_dispatch.py
+modules/cli_runtime_meta.py
+modules/cli_runtime_controls.py
+modules/cli_about_runtime.py
+modules/cli_browser_runtime.py
+modules/cli_browser_yt_runtime.py
+modules/cli_files_runtime.py
+modules/cli_http_runtime.py
+modules/cli_logs_runtime.py
+modules/cli_memory_runtime.py
+modules/cli_module_runtime.py
+modules/cli_project_runtime.py
+modules/cli_tokens_runtime.py
+modules/cli_vcs_runtime.py
+modules/audio_runtime.py
+modules/cam_pi.py
+
+
+[CLI FACTS FROM HANDLERS - BASIC/META/CONTROLS/CORE]
+----------------------------------------
+cli_basic_dispatch.py:
+- ACTIVE | CLI | help
+- ACTIVE | CLI | ?
+- ACTIVE | CLI | exit
+- ACTIVE | CLI | quit
+- ACTIVE | CLI | q
+
+cli_runtime_meta.py:
+- ACTIVE | CLI | model <name>
+- ACTIVE | CLI | temp <0.0-1.0>
+- ACTIVE | CLI | max_tokens <int>
+- ACTIVE | CLI | max <int>
+
+cli_runtime_controls.py:
+- ACTIVE | CLI | strict on
+- ACTIVE | CLI | strict off
+- ACTIVE | CLI | smart on
+- ACTIVE | CLI | smart off
+- ACTIVE | CLI | smart auto
+- ACTIVE | CLI | smart status
+- ACTIVE | CLI | smart provider <api|local|rules>
+- ACTIVE | CLI | smart limit status
+- ACTIVE | CLI | smart limit set <int>
+- ACTIVE | CLI | smart limit reset
+- ACTIVE | CLI | piper status
+- ACTIVE | CLI | piper standard
+- ACTIVE | CLI | piper dark
+- ACTIVE | CLI | piper cyborg
+- ACTIVE | CLI | glos standard
+- ACTIVE | CLI | glos dark
+- ACTIVE | CLI | glos cyborg
+- ACTIVE | CLI | głos standard
+- ACTIVE | CLI | głos dark
+- ACTIVE | CLI | głos cyborg
+- ACTIVE | CLI | diag
+- ACTIVE | CLI | net on
+- ACTIVE | CLI | net off
+- ACTIVE | CLI | net allow <domain>
+- ACTIVE | CLI | net deny <domain>
+- ACTIVE | CLI | net list
+
+cli_core_dispatch.py:
+- ACTIVE | CLI | natural dispatch for non-explicit input
+- ACTIVE | PARTIAL | code <...> handled separately through cli_codegen
+- ACTIVE | KERNEL | execute_cli_intent(line)
+- IMPORTANT:
+  natural dispatch intentionally skips:
+  * basic commands: exit quit q help ? stop
+  * youtube commands: yt ...
+  * browser-like prefixes: web / otworz / otwórz / pokaz / pokaż / znajdz / znajdź / wyszukaj
+  * music-like prefixes: play / wlacz piosenke / włącz piosenkę / pusc / puść / odtworz / odtwórz
+  * explicit shell: !
+  * explicit ai: ai
+  * explicit intent:
+  * meta prefixes: modules / module / model / temp / max / max_tokens / strict / net / diag
+
+Wniosek:
+Naturalny dispatch nie jest glowna droga dla wszystkich komend.
+Duza czesc funkcji zyje w runtime handlers i explicit paths.
+
+
+
+[CLI FACTS FROM HANDLERS - YT/BROWSER/FILES/MEMORY/PROJECT/TOKENS]
+----------------------------------------
+cli_browser_yt_runtime.py:
+- ACTIVE | CLI | yt play
+- ACTIVE | CLI | yt pause
+- ACTIVE | CLI | yt pp
+- ACTIVE | CLI | yt stop
+- ACTIVE | CLI | stop
+- ACTIVE | CLI | yt skip
+- ACTIVE | CLI | yt pomin
+- ACTIVE | CLI | yt pomiń
+- ACTIVE | CLI | yt pomin reklamę
+- ACTIVE | CLI | yt pomin reklame
+- ACTIVE | CLI | yt adguard on
+- ACTIVE | CLI | yt adguard off
+- ACTIVE | CLI | yt adguard
+- ACTIVE | CLI | yt adguard status
+- ACTIVE | CLI | yt next
+- ACTIVE | CLI | yt n
+- ACTIVE | CLI | yt prev
+- ACTIVE | CLI | yt p
+- ACTIVE | CLI | yt vol+
+- ACTIVE | CLI | yt up
+- ACTIVE | CLI | yt vol-
+- ACTIVE | CLI | yt down
+- ACTIVE | CLI | yt fs
+- ACTIVE | CLI | yt fullscreen
+- ACTIVE | CLI | yt fullscrean
+- ACTIVE | CLI | yt help
+- ACTIVE | CLI | help yt
+- ACTIVE | CLI | yt pomoc
+- ACTIVE | CLI | yt pomocy
+- ACTIVE | CLI | yt exit
+- ACTIVE | CLI | yt quit
+- ACTIVE | CLI | yt close
+- ACTIVE | CLI | yt <query>
+- ACTIVE | CLI | youtube <query>
+- ACTIVE | CLI | włącz youtube <query>
+- ACTIVE | CLI | wlacz youtube <query>
+- ACTIVE | CLI | play <query>
+- ACTIVE | CLI | włącz piosenkę <query>
+- ACTIVE | CLI | wlacz piosenke <query>
+- ACTIVE | CLI | puść <query>
+- ACTIVE | CLI | pusc <query>
+- ACTIVE | CLI | odtwórz <query>
+- ACTIVE | CLI | odtworz <query>
+- ACTIVE | CLI | + / ++ / +++ ... (ustawianie głośności procentowo)
+- ACTIVE | CLI | m
+- ACTIVE | CLI | u
+
+Wnioski YT:
+- YouTube ma lokalne sterowanie bez LLM
+- YouTube ma lokalne szukanie i start odtwarzania
+- Voice queue w cli_entry.py probuje najpierw YT lokalnie
+- To jest jedna z glownych funkcji do zachowania przy refaktorze V4
+
+cli_browser_runtime.py:
+- ACTIVE | CLI | web <url>
+- ACTIVE | CLI | otwórz ...
+- ACTIVE | CLI | otworz ...
+- ACTIVE | CLI | pokaż ...
+- ACTIVE | CLI | pokaz ...
+- ACTIVE | CLI | znajdź ...
+- ACTIVE | CLI | znajdz ...
+- ACTIVE | CLI | wyszukaj ...
+
+Wnioski browser/web:
+- browser runtime uruchamia sie tylko dla zapytan wygladajacych na URL lub browser-ish query
+- ma heurystyki odrozniajace browser od filesystem
+- jest slabszy i bardziej heurystyczny niz runtime YouTube
+- wymaga osobnej oceny podczas refaktoru voice
+
+cli_files_runtime.py:
+- ACTIVE | CLI | read <path>
+- ACTIVE | CLI | write <path> <content>
+
+cli_memory_runtime.py:
+- ACTIVE | CLI | mem add <text>
+- ACTIVE | CLI | mem pin <id>
+- ACTIVE | CLI | mem unpin <id>
+- ACTIVE | CLI | mem search <query>
+- ACTIVE | CLI | mem list
+- ACTIVE | CLI | mem list <n>
+- ACTIVE | CLI | mem clear
+
+cli_project_runtime.py:
+- ACTIVE | CLI | project list
+- ACTIVE | CLI | project new <name>
+- ACTIVE | CLI | project open <name>
+- ACTIVE | CLI | project pwd
+
+cli_tokens_runtime.py:
+- ACTIVE | CLI | tokens
+- ACTIVE | CLI | tokens report
+- ACTIVE | CLI | tokens reset
+
+[CLI FACTS FROM HANDLERS - LOGS/VCS/MODULES/HTTP/ABOUT/AUDIO/CAMERA]
+----------------------------------------
+cli_logs_runtime.py:
+- ACTIVE | CLI | logs tail
+- ACTIVE | CLI | logs tail <n>
+- ACTIVE | CLI | logs grep <pattern>
+- ACTIVE | CLI | logs export <path>
+- ACTIVE | CLI | logs clear
+
+cli_vcs_runtime.py:
+- ACTIVE | CLI | vcs init
+- ACTIVE | CLI | vcs ensure
+- ACTIVE | CLI | vcs status
+- ACTIVE | CLI | vcs oneline
+- ACTIVE | CLI | vcs oneline <n>
+- ACTIVE | CLI | vcs diff
+- ACTIVE | CLI | vcs diff <path>
+- ACTIVE | CLI | vcs save: <msg>
+- ACTIVE | CLI | vcs commit <msg>
+
+cli_module_runtime.py:
+- ACTIVE | CLI | modules list
+- ACTIVE | CLI | module info <name>
+- ACTIVE | CLI | module run <name> [args...]
+
+cli_http_runtime.py:
+- ACTIVE | CLI | get <url>
+- ACTIVE | CLI | get <url> --headers
+- ACTIVE | CLI | geth <url>
+
+cli_about_runtime.py:
+- ACTIVE | CLI | about
+
+audio_runtime.py:
+- ACTIVE | CLI | voice on
+- ACTIVE | CLI | voice off
+- ACTIVE | CLI | jbl on
+- ACTIVE | CLI | jbl off
+
+Wnioski audio:
+- voice runtime jest uruchamiany jako osobny proces w tle
+- voice ma PID file, log file i state file
+- voice start ma grace period blokujacy nasluch chwilowo po uruchomieniu
+- audio/jbl jest osobna funkcja operacyjna systemu i nalezy ja zachowac
+
+cam_pi.py:
+- ACTIVE | CLI | zrob zdjecie
+- ACTIVE | CLI | zrob <n> zdjecia
+- ACTIVE | CLI | rob zdjecia
+- ACTIVE | CLI | rob <n> zdjec
+- ACTIVE | CLI | nagraj film
+- ACTIVE | CLI | nagraj film <sekundy>
+- ACTIVE | CLI | nagraj film <m:ss>
+- ACTIVE | CLI-TOOL | python3 cam_pi.py list
+- ACTIVE | CLI-TOOL | python3 cam_pi.py photo [name.jpg]
+- ACTIVE | CLI-TOOL | python3 cam_pi.py burst [count] [fps]
+- ACTIVE | CLI-TOOL | python3 cam_pi.py video [seconds]
+- ACTIVE | CLI-TOOL | python3 cam_pi.py cmd "<tekst>"
+
+Wnioski camera:
+- kamera ma juz naturalny parser komend tekstowych
+- kamera jest wywolywana w cli_entry.py przed module/project/tokens/about/http/files/memory/logs/vcs
+- kamera jest dobra kandydatka do zachowania i pozniejszej integracji voice-first
+
+
+
+[VOICE DECISION OWNERS - CURRENT STATE]
+----------------------------------------
+voice_daemon.py:
+- ACTIVE | OWNER | glowny koordynator process_voice_text()
+- ACTIVE | OWNER | preprocess voice text
+- ACTIVE | OWNER | uruchamia orchestrator
+- ACTIVE | OWNER | fallback do voice_router
+- ACTIVE | OWNER | liczy wake/session requirements
+- ACTIVE | OWNER | uruchamia analyze_wake(...)
+- ACTIVE | OWNER | uruchamia decide_dispatch(...)
+- ACTIVE | OWNER | uruchamia should_use_intent_assist(...)
+- ACTIVE | OWNER | przekazuje execute/reroute_to_agent do kernel bridge
+- ACTIVE | OWNER | buduje final response JSON
+
+voice_orchestrator.py:
+- ACTIVE | EARLY-ROUTER | plan_voice_action(...)
+- ACTIVE | EARLY-ROUTER | moze wymusic route=device
+- ACTIVE | EARLY-ROUTER | moze wymusic route=youtube
+- ACTIVE | EARLY-ROUTER | moze wymusic route=conversation dla knowledge question
+- ACTIVE | CONTEXT | recent_youtube_context()
+- ACTIVE | HEURISTICS | parse_device_command / parse_youtube_command / looks_like_question / bare_media_query
+
+voice_router.py:
+- ACTIVE | ROUTE-CLASSIFIER | classify_voice_route(...)
+- ACTIVE | ROUTE-CLASSIFIER | route classes:
+  conversation / device / system / youtube / smart_query / unsafe_candidate / unknown
+- ACTIVE | HEURISTICS | keyword scoring i boosty
+
+voice_dispatch.py:
+- ACTIVE | ACTION-DECIDER | decide_dispatch(...)
+- ACTIVE | ACTION-DECIDER | akcje:
+  execute / ask_confirm / reroute_to_agent / reject
+- ACTIVE | POLICY | progi confidence dla device/system/youtube/smart_query/conversation/unsafe
+
+voice_kernel_bridge.py:
+- ACTIVE | EXECUTION-BRIDGE | execute_voice_via_kernel(...)
+- ACTIVE | EXECUTION-BRIDGE | route_hint:
+  device -> device
+  youtube -> youtube
+  other -> conversation
+- ACTIVE | RESPONSE-ADAPTER | voice_reply_from_kernel(...)
+
+Wniosek glowny:
+- voice_daemon nie jest cienkim adapterem
+- voice_daemon skleja kilka warstw decyzyjnych
+- decyzja intent/route/action jest obecnie rozproszona:
+  orchestrator -> router -> wake -> dispatch -> kernel
+- to jest glowny kandydat do uproszczenia w V4
+
+
+
+[VOICE POLICY HELPERS - CURRENT STATE]
+----------------------------------------
+voice_wake.py:
+- ACTIVE | HELPER | normalize wake aliases
+- ACTIVE | HELPER | strip leading wake word
+- ACTIVE | POLICY | wake_policy_required(route_class, ...)
+- ACTIVE | POLICY | analyze_wake(...)
+- ACTIVE | POLICY | strict route classes wymagajace wake:
+  device / system / unsafe_candidate
+- ACTIVE | POLICY | default wake aliases:
+  hal / chal / kal / halu / helu
+
+voice_session.py:
+- ACTIVE | HELPER | session state lifecycle
+- ACTIVE | HELPER | start_voice_session(...)
+- ACTIVE | HELPER | end_voice_session(...)
+- ACTIVE | HELPER | is_session_active(...)
+- ACTIVE | HELPER | touch_voice_session(...)
+- ACTIVE | POLICY | aktywna sesja moze zniesc wymog wake dla kolejnych tur
+
+voice_intent_assist.py:
+- ACTIVE | POLICY-SIGNAL | should_use_intent_assist(...)
+- ACTIVE | POLICY-SIGNAL | wlacza assist dla:
+  unknown route / low confidence / reroute_to_agent / complex phrase
+- IMPORTANT:
+  obecnie zwraca decyzje use_assist=True/False,
+  ale nie widac osobnej sciezki wykonawczej assist w voice_daemon.py
+- RISK:
+  modul moze byc bardziej sygnalizatorem niz realnym wykonawca
+
+voice_response_adapter.py:
+- ACTIVE | RESPONSE | buduje final response z kernel_result
+- ACTIVE | RESPONSE | route=device -> staly komunikat sukces/blad
+- ACTIVE | RESPONSE | route=youtube -> staly komunikat sukces/blad
+- ACTIVE | RESPONSE | other -> reply_text z kernela lub fallback
+- IMPORTANT:
+  odpowiedz voice jest rozdzielona miedzy voice_daemon.py i voice_response_adapter.py
+
+Wniosek:
+- wake i session wygladaja jak sensowne helpery polityki
+- intent_assist wyglada na warstwe nie do konca domknieta wykonawczo
+- response adapter jest kolejna osobna warstwa odpowiedzi
+- glowny chaos architektoniczny nadal siedzi w orchestrator/router/dispatch/daemon
+
+
+
+[MEMORY / COST POLICY - CURRENT STATE]
+----------------------------------------
+runtime_core.py / MemoryStore:
+- ACTIVE | STORAGE | sessions table
+- ACTIVE | STORAGE | messages table
+- ACTIVE | STORAGE | summaries table
+- ACTIVE | STORAGE | memories table
+- ACTIVE | STORAGE | ensure_session(session_id)
+- ACTIVE | STORAGE | add_message(session_id, role, content)
+- ACTIVE | STORAGE | get_recent_messages(session_id, limit=12)
+- ACTIVE | STORAGE | last_summary(session_id)
+- ACTIVE | STORAGE | add_summary(session_id, upto_msg_id, content)
+- ACTIVE | STORAGE | count_since_summary(session_id)
+- ACTIVE | STORAGE | add_memory / list_memories / pin_memory / clear_memories / search_memories
+
+Wnioski MemoryStore:
+- magazyn pamieci istnieje i jest prosty
+- get_recent_messages zwraca ostatnie wiadomosci bez limitu znakow i bez polityki typu pytania
+- summaries istnieja w DB, ale nie widac realnego wlaczenia ich do promptow LLM
+- problem nie siedzi glownie w MemoryStore, tylko w polityce uzycia przez agent_api.py
+
+agent_api.py:
+- ACTIVE | LLM | ask_ai_grounded(context_prompt)
+- ACTIVE | LLM | ask_ai_local(prompt)
+- ACTIVE | LLM | ask_ai(prompt, execute=True/False)
+
+Aktualna polityka kosztowa:
+- ask_ai_local() zawsze pobiera recent_messages limit=8
+- ask_ai() zawsze pobiera recent_messages limit=10
+- brak osobnej sciezki stateless dla prostych pytan
+- brak osobnej sciezki light_context dla follow-up
+- brak realnego summary-first prompt building
+
+_maybe_autosummarize():
+- MISLEADING NAME | nie robi streszczenia sesji
+- tylko ucina bardzo dluga odpowiedz do ok. 12000 znakow
+- zawiera zdublowany fragment kodu
+- kandydat do poprawy lub usuniecia/wymiany
+
+voice_history.py:
+- ACTIVE | LOGGING | append_voice_history(event)
+- prosty log JSONL
+- nie wyglada na glowny element kosztu ani decyzji
+
+Wniosek glowny:
+- koszt prostych pytan jest zawyzany przez domyslne dolaczanie historii
+- V4 potrzebuje jawnej polityki:
+  1. stateless
+  2. light_context
+  3. session_context
+- summary powinno byc opcjonalnym zrodlem kompresji kontekstu, a nie martwa tabela
+
+
+
+[V4 MIGRATION CHECKPOINTS]
+----------------------------------------
+CHECKPOINT 1:
+- agent_api.py / ask_ai(...)
+- dodano context_mode:
+  * stateless
+  * light
+  * session
+- domyslnie zachowano session
+- dodano logowanie:
+  * context_mode
+  * history_count
+
+CHECKPOINT 2:
+- agent_api.py / ask_ai_local(...)
+- dodano context_mode:
+  * stateless
+  * light
+  * session
+- domyslnie zachowano session
+- dodano logowanie:
+  * context_mode
+  * history_count
+
+Wniosek:
+- V4 ma juz pierwsza techniczna dzwignie do ograniczania kosztu prostych pytan
+- jeszcze nie zmieniono wywolan, ale infrastruktura polityki pamieci juz istnieje
+
+
+
+CHECKPOINT 3:
+- agent_api.py / wrapper methods
+- dodano:
+  * ask_ai_stateless(...)
+  * ask_ai_light(...)
+  * ask_ai_local_stateless(...)
+  * ask_ai_local_light(...)
+
+Wniosek:
+- wywolania V4 nie musza recznie przekazywac context_mode stringiem
+- mozna zaczac migrowac konkretne sciezki voice/CLI do taszych trybow
+
+
+
+CHECKPOINT 4:
+- modules/agent_answer.py
+- zwykla sciezka local knowledge przelaczona z:
+  ask_ai_local(prompt)
+  na:
+  ask_ai_local_stateless(prompt)
+
+- sciezka _looks_like_hal_conversation(prompt) zostawiona bez zmian:
+  ask_ai_local(final_prompt)
+
+Wniosek:
+- proste pytania lokalne dostaly pierwszy realny tryb tanszy kosztowo
+- rozmowa z kontekstem halowym zostala zachowana
+- to jest pierwszy produkcyjny uzytek polityki stateless w V4
+
+
+
+CHECKPOINT 5:
+- modules/execution_router.py
+- route == conversation przelaczono z:
+  api.ask_ai(normalized_text, execute=False, note="cli_tools")
+  na:
+  api.ask_ai_light(normalized_text, execute=False, note="cli_tools")
+
+Wniosek:
+- wspolna sciezka conversation w kernelu zaczela korzystac z lzejszego kontekstu
+- follow-upy nadal maja minimalny kontekst
+- koszt conversation powinien spasc bez utraty podstawowej ciaglosci rozmowy
+
+
+
+CHECKPOINT 5:
+- modules/execution_router.py
+- route == conversation przelaczono z:
+  api.ask_ai(normalized_text, execute=False, note="cli_tools")
+  na:
+  api.ask_ai_light(normalized_text, execute=False, note="cli_tools")
+
+Wniosek:
+- wspolna sciezka conversation w kernelu zaczela korzystac z lzejszego kontekstu
+- follow-upy nadal maja minimalny kontekst
+- koszt conversation powinien spasc bez utraty podstawowej ciaglosci rozmowy
+
+
+
+CHECKPOINT 6:
+- dodano modules/context_policy_v4.py
+- nowa jawna polityka wyboru context_mode:
+  * stateless
+  * light
+  * session
+
+Obecne zalozenia V4:
+- device/youtube/system/unsafe -> stateless
+- krotka conversation bez sesji -> stateless
+- follow-up z sesja -> light
+- krotka conversation -> light
+- dluzsza conversation -> session
+
+Wniosek:
+- polityka pamieci przestaje byc zaszyta przypadkowo w wywolaniach
+- V4 dostaje osobny modul decydujacy o koszcie i kontekscie
+
+
+
+CHECKPOINT 7:
+- dodano modules/voice_intent_pipeline_v4.py
+- nowy zintegrowany wynik decyzji voice:
+  * route
+  * action
+  * final_text
+  * confidence
+  * reason
+  * context_mode
+  * route_result
+  * dispatch_result
+  * orchestrator_result
+
+Obecne zalozenia V4:
+- pipeline V4 scala:
+  orchestrator + router + dispatch + context policy
+- stary voice_daemon jeszcze nie jest przepiety
+- nowy pipeline mozna juz testowac niezaleznie
+
+Wniosek:
+- V4 dostaje nowy kandydat na glowny mozg voice
+- decyzja voice zaczyna byc zwracana jako jeden spójny obiekt
+
+
+
+CHECKPOINT 9:
+- context_mode z pipeline V4 przechodzi end-to-end:
+  voice_intent_pipeline_v4 -> voice_daemon -> voice_kernel_bridge -> execution_metadata -> execution_router
+
+- execution_router route == conversation:
+  * context_mode=stateless -> ask_ai_stateless(...)
+  * context_mode=light -> ask_ai_light(...)
+  * fallback -> ask_ai(..., context_mode="session")
+
+Wniosek:
+- V4 zaczyna sterowac nie tylko route i action, ale tez kosztem odpowiedzi conversation
+- polityka kontekstu staje sie realna czescia wykonania, a nie tylko teoria
+
+
+
+CHECKPOINT 10:
+- voice_daemon.py
+- usunieto aktywne sterowanie przez should_use_intent_assist(...)
+- assist_result staje sie lekkim opisem wyniku V4 zamiast osobnej warstwy decyzji
+- dispatch_selected loguje teraz:
+  * context_mode
+  * context_reason
+
+Wniosek:
+- stara warstwa assist przestaje wspolrzadzic glowna sciezka voice
+- V4 przejmuje nie tylko route/action, ale tez opis kosztu i kontekstu
+
+
+
+CHECKPOINT 11:
+- voice_daemon.py
+- usunieto nieuzywany import should_use_intent_assist
+- voice_intent_assist wypada z aktywnej glownej sciezki daemona
+
+Wniosek:
+- V4 odcina kolejny fragment starej architektury voice
+- warstwa assist przestaje byc nawet symbolicznym uczestnikiem glownego przeplywu
+
+
+
+CHECKPOINT 12:
+- dodano modules/voice_response_policy_v4.py
+- voice_daemon.py korzysta z helperow V4 dla:
+  * reject
+  * ask_confirm
+- odpowiedzi reject/ask_confirm nie sa juz recznie skladane inline w daemonie
+
+Wniosek:
+- voice_daemon dalej chudnie
+- kolejny fragment odpowiedzialnosci zostal wydzielony do warstwy V4
+
+
+
+CHECKPOINT 14:
+- voice_intent_pipeline_v4.py
+- unknown guard zostal oslabiony:
+  * jesli router widzi conversation lub smart_query z sensownym score, pipeline nie robi od razu ask_repeat
+  * follow-up przy aktywnej sesji moze zostac uratowany przed unknown guard
+
+Wniosek:
+- V4 przestaje zbyt agresywnie odrzucac pytania typu smart_query
+- unknown guard staje sie bezpiecznikiem, a nie tyranem
+
+
+
+CHECKPOINT 15:
+- voice_intent_pipeline_v4.py
+- dodano follow-up guard bez sesji:
+  * frazy typu "a teraz krócej" nie trafiaja juz do LLM jako zwykla stateless conversation
+  * pipeline prosi o doprecyzowanie, jesli brak aktywnej sesji
+
+Wniosek:
+- V4 dostaje bezpiecznik przeciwko bezkontekstowym follow-upom
+- zmniejsza sie ryzyko absurdalnych odpowiedzi z przypadkowej interpretacji
+
+
+
+CHECKPOINT 16:
+- context_policy_v4.py
+- dodano looks_like_followup_text(...)
+- follow-up detection nie uzywa juz prostego "marker in text"
+- voice_intent_pipeline_v4.py korzysta z helpera follow-up zamiast surowego substring match
+
+Wniosek:
+- follow-up detection staje sie mniej prymitywne
+- zmniejsza sie ryzyko falszywego traktowania smart_query jako follow-up
+
+
+
+CHECKPOINT 17:
+- voice_dispatch.py
+- obnizono prog smart_query_execute_min:
+  z 0.55
+  na 0.40
+
+Wniosek:
+- typowe pytania smart_query typu "poszukaj mi informacji o..." maja wieksza szanse przejsc bez zbednego ask_confirm
+- sterowanie glosowe staje sie bardziej plynne w praktycznych pytaniach wyszukujacych
+
+
+
+CHECKPOINT 18:
+- execution_classifier.py
+- smart_query przestaje byc mapowane do conversation
+- execution_router.py dostaje osobny branch route == smart_query
+
+Wniosek:
+- V4 odroznia juz nie tylko intencje glosowa, ale tez osobna sciezke wykonania smart_query
+- to przygotowuje grunt pod przyszle podpiete web_research zamiast zwyklej rozmowy
+
+
+
+CHECKPOINT 18:
+- execution_classifier.py
+- smart_query przestaje byc mapowane do conversation
+- execution_router.py dostaje osobny branch route == smart_query
+
+Wniosek:
+- V4 odroznia juz nie tylko intencje glosowa, ale tez osobna sciezke wykonania smart_query
+- to przygotowuje grunt pod przyszle podpiete web_research zamiast zwyklej rozmowy
+
+
+
+CHECKPOINT 20:
+- agent_runtime.py przekazuje registry do GPTChatAPI
+- GPTChatAPI dostaje metode run_web_research(...)
+- execution_router.py:
+  smart_query -> run_web_research(...)
+
+Wniosek:
+- smart_query przestaje byc zwykla rozmowa o szukaniu
+- V4 dostaje prawdziwa sciezke research zamiast samej narracji o research
+
+
+
+CHECKPOINT 21:
+- web_research.py
+- dodano normalize_research_query(...)
+- smart_query typu "poszukaj mi informacji o ..." jest czyszczone do sensownego rdzenia zapytania
+- odfiltrowano smieciowe linki Bing:
+  * bing search page
+  * bing sa assets
+  * r.bing.com
+
+Wniosek:
+- smart_query zaczyna pytac o temat, a nie o sam czasownik "poszukaj"
+- zrodla web research staja sie mniej smieciowe
+
+
+
+CHECKPOINT 22:
+- utworzono gpt_chat_v4.py jako nowy entrypoint
+- agent_runtime.py zostal przepiety z gpt_chat_v3.py na gpt_chat_v4.py
+- gpt_chat_v4.py uruchamia sie poprawnie
+
+Wniosek:
+- V4 ma juz wlasny front uruchomieniowy
+- dalsze prace mozna prowadzic juz na nowej wersji bez udawania, ze to nadal tylko eksperyment
+

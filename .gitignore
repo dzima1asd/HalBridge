@@ -1,27 +1,114 @@
-# --- runtime / media ---
-media/
-*.m3u8
-*.ts
-*.mp4
-*.jpg
-*.jpeg
-*.png
-
-# --- logs / temp ---
-*.log
-*.tmp
-*.swp
-*.bak
 __pycache__/
 *.pyc
 *.pyo
+*.pyd
+*.so
 
-# --- backups / archives ---
+.venv/
+venv/
+env/
+venv*/
+.venv*/
+
+logs/
+*.log
+tmp/
+temp/
+.cache/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+*.bak
+*.bak_*
+*~
+
+archive/
+archives/
+*.tar
 *.tar.gz
-*_backup_*/
-hal_program_backup_*/
-hal_stream_backup_*/
+*.tgz
+*.zip
+*.7z
+*.rar
 
-# --- random local artifacts ---
-777
-XXDsdVAD
+media/
+multimedia/
+assets/
+*.mp3
+*.wav
+*.mp4
+*.avi
+*.mkv
+*.mov
+*.jpg
+*.jpeg
+*.png
+*.webp
+*.gif
+
+tests/
+test/
+testing/
+*_test.py
+test_*.py
+
+.vscode/
+.idea/
+.DS_Store
+.env
+*.env
+# Editor swap / temp
+*.swp
+*.swo
+*.tmp
+*.orig
+
+# Keys / certs / secrets / local DB
+*.pem
+*.key
+*.crt
+*.sqlite
+*.sqlite3
+
+# Runtime/state artifacts
+*.out
+*.err
+*.jsonl
+token_usage.csv
+token_totals.json
+intent_metrics.json
+state/
+agent_memory.sqlite3
+
+# Backups / copies / archives inside project
+_bak_*/
+*_backup_*/
+*copy*.py
+*copy*.json
+*.bak_*
+*.before_*.py
+
+# Specific noisy files
+low
+tryb
+shutdown
+41
+# Local pointers / ad-hoc artifacts
+projects/.current
+modules/tools/projects/.current
+cp_modules_core_loop_py_modules_core_loop_py_bak_add_message_fieldexit.py
+projects/default/test.py
+scripts/smoke_test_server_api.sh
+# Old stream/UI variants and throwaway copies
+hal_stream_final.py
+hal_stream_ui.py
+hal_stream_ui_lastGPT.py
+hal_stream_ui_v3.py
+hal_stream_ui_v3_copy1.py
+hal_stream_ui_v3_error.py
+hal_stream_ui_v4.py
+hal_stream_ui_v4_copy1_prymityw.py
+hal_stream_ui_v4_copy2.py
+hal_stream_ui_v5_copy1.py
+hal_ui_simple.py
