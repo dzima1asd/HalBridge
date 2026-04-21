@@ -112,3 +112,11 @@ hal_stream_ui_v4_copy1_prymityw.py
 hal_stream_ui_v4_copy2.py
 hal_stream_ui_v5_copy1.py
 hal_ui_simple.py
+# Removed legacy/archive/demo content
+intent_metrics.json
+agent_api_dependency_report.txt
+backup_inventory.txt
+modules/gmail_bridge/archive_20250823_141800/
+modules/gmail_bridge/gmail_ingest_unified.copy3.py
+projects/default/
+tests/engine_torture_test.sh
