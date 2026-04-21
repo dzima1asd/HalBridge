@@ -122,3 +122,5 @@ projects/default/
 tests/engine_torture_test.sh
 modules/gmail_bridge/income_matched.json
 modules/gmail_bridge/income_model.json
+HALbridge-ChatGPT-to-local-automation/content.js
+device_commands.json
