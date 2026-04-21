@@ -1,6 +1,6 @@
 // content.js – HalBridge-integrated
 
-const SERVER_URL = "http://192.168.100.12:5000"; const TOKEN = localStorage.getItem("halbridge_token") || "bardzo_sekretny_token"; const AUTO_RUN = localStorage.getItem("halbridge_auto_run") === "true"; const DEBUG = true;
+const SERVER_URL = "http://localhost:5000"; const TOKEN = localStorage.getItem("halbridge_token") || "CHANGE_ME_TOKEN"; const AUTO_RUN = localStorage.getItem("halbridge_auto_run") === "true"; const DEBUG = true;
 
 function log(...args) { if (DEBUG) console.log("[HalBridge Extension]", ...args); }
 
